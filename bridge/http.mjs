@@ -15,6 +15,9 @@ export function createBridge({key,giftMap,connect,pixels=avatarPixels}){
   c.on('gift',d=>{
    if(s.closed||s.ending||s.connection!==c)return;
    if((d.giftDetails?.giftType??d.giftType??d.gift?.type)===1&&!d.repeatEnd)return;
+   const giftName=d.giftDetails?.giftName??d.giftName;
+   const coinCost=d.giftDetails?.diamondCount??d.diamondCount;
+   if(d.giftId&&s.observedGifts.size<500)s.observedGifts.set(String(d.giftId),{id:String(d.giftId),name:giftName,coins:coinCost,mapped:giftMap[String(d.giftId)]??null});
    const e=normalizeGift(d,giftMap);if(!e){s.unmapped++;return;}
    if(s.received.has(e.id))return;s.received.add(e.id);if(s.received.size>10000)s.received.delete(s.received.values().next().value);
    if(s.processing>=32){s.imageSkipped++;delete e.avatarUrl;s.queue.push(e);return;}
@@ -44,7 +47,7 @@ export function createBridge({key,giftMap,connect,pixels=avatarPixels}){
     const now=Date.now();if(now-(attempts.get(token)??0)<3000)return reply(429,{error:'RATE_LIMIT'});
     if(sessions.size>=8&&!sessions.has(token))return reply(429,{error:'CAPACITY'});
     attempts.set(token,now);if(sessions.has(token))stop(sessions.get(token));
-    const s={username:name,queue:new SessionQueue(),received:new Set(),processing:0,unmapped:0,imageSkipped:0,lastPoll:now,retries:0,closed:false};sessions.set(token,s);start(s);
+    const s={username:name,queue:new SessionQueue(),received:new Set(),observedGifts:new Map(),processing:0,unmapped:0,imageSkipped:0,lastPoll:now,retries:0,closed:false};sessions.set(token,s);start(s);
     return reply(202,{status:s.status,username:name});
    }
    if(url.pathname==='/disconnect'&&req.method==='POST'){const s=sessions.get(token);if(s)stop(s);sessions.delete(token);return reply(200,{status:'DISCONNECTED'});}
@@ -56,7 +59,7 @@ export function createBridge({key,giftMap,connect,pixels=avatarPixels}){
     return reply(200,{status:s.status,username:s.username,...batch,hasMore:batch.cursor<s.queue.seq,unmapped:s.unmapped,imageSkipped:s.imageSkipped});
    }
    if(url.pathname==='/session/gifts'&&req.method==='GET'){
-    const s=sessions.get(token);return reply(200,{gifts:s?.connection?.availableGifts??s?.connection?.state?.availableGifts??[]});
+    const s=sessions.get(token);return reply(200,{gifts:s?[...s.observedGifts.values()]:[],source:'observed_live_events'});
    }
    reply(404,{error:'NOT_FOUND'});
   }catch{reply(400,{error:'INVALID_REQUEST'});}

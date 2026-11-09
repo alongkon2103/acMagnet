@@ -1,9 +1,9 @@
 return {
     Gifts = {
-        Rose = {Name = "กุหลาบ", Coins = 1, Blocks = 10, Color = Color3.fromRGB(255, 88, 142)},
-        Roses = {Name = "โรส", Coins = 10, Blocks = 100, Color = Color3.fromRGB(177, 112, 255)},
-        Perfume = {Name = "น้ำหอม", Coins = 20, Freeze = 10, Color = Color3.fromRGB(73, 219, 255)},
-        Bear = {Name = "อุ้มใจหมี", Coins = 100, Blocks = 1000, Color = Color3.fromRGB(255, 193, 94)},
+        Rose = {GiftId = 5655, Name = "กุหลาบ", Coins = 1, Blocks = 10, Color = Color3.fromRGB(255, 88, 142)},
+        Roses = {GiftId = 8913, Name = "โรซ่า", Coins = 10, Blocks = 100, Color = Color3.fromRGB(177, 112, 255)},
+        Perfume = {GiftId = 5658, Name = "น้ำหอม", Coins = 20, Freeze = 10, Color = Color3.fromRGB(73, 219, 255)},
+        Bear = {GiftId = 5566, Name = "อุ้มใจหมี", Coins = 100, Blocks = 1000, Color = Color3.fromRGB(255, 193, 94)},
     },
     Order = {"Rose", "Roses", "Perfume", "Bear"},
     MaxActive = 1600,

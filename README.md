@@ -4,7 +4,7 @@ Backend and Roblox sources for MAGNET LAB, place `113965026399564`.
 
 ## Current setup
 
-**Deployed:** `https://acmagnet.aclassstore.com` via named Cloudflare tunnel `ac-magnet` on `gamestore-vps`. Application `/var/www/acMagnet`, localhost port `3211`, PM2 processes `ac-magnet-bridge` and `ac-magnet-tunnel`, saved for restart. Studio LiveConfig now points to this permanent URL. Public health check passed; backend tests also passed on the VPS. No signing key was configured in the existing reference backend, and the VPS LIVE probe hit the same signing-provider Business-plan requirement. The new domain still needs to be added to the Studio **Assistant** HTTP allowlist for MCP HTTP verification.
+**Deployed:** `https://acmagnet.aclassstore.com` via named Cloudflare tunnel `ac-magnet` on `gamestore-vps`. Application `/var/www/acMagnet`, localhost port `3211`, PM2 processes `ac-magnet-bridge` and `ac-magnet-tunnel`, saved for restart. Studio LiveConfig points to this permanent URL. Public health check, authenticated session API and actual public TikTok LIVE connection passed from the VPS. The new domain still needs to be added to the Studio **Assistant** HTTP allowlist for MCP HTTP verification.
 
 - `bridge/server.mjs`: authenticated session bridge on localhost:8787.
 - `bridge/core.mjs`: gift ID mapping, streak normalization, deduplication, replay cursors.
@@ -36,11 +36,20 @@ Set the resulting HTTPS URL and matching key in **ServerScriptService.LiveConfig
 
 ### TikTok signing provider
 
-The installed connector is `tiktok-live-connector@2.5.0`. Its default signing provider rejected an actual connection probe with `SignatureMissingTokensError` / “This endpoint requires a Business plan.” No provider subscription or key was available, so live end-to-end acceptance remains unverified. Configure an eligible provider key as `SIGN_API_KEY` in the **local .env** and restart Node. Do not paste keys into chat or client scripts. The game shows `SIGNING_REQUIRED` for this failure. The connector is unofficial; receiving TikTok LIVE depends on upstream availability and provider access.
+The installed connector is `tiktok-live-connector@2.5.0`. **Extended gift-catalog fetching is disabled:** enabling it requests arbitrary URL signing, which returned a Business-plan error during initial investigation. The normal LIVE connection works without a key in the verified environment; both direct connector and deployed session API connected to `natthapornsrichinwinit1` on 2026-11-09. Do not enable extended catalog fetching just to receive gifts. The connector still uses its upstream signing provider for WebSocket setup and may have changing availability/quotas. If a future deployment requires an eligible provider key, configure `SIGN_API_KEY` in the server .env and restart Node; never put it in client scripts. The game shows `SIGNING_REQUIRED` when applicable. No paid plan was purchased.
 
 ### Gift mapping
 
-`GIFT_IDS` in `.env` maps real TikTok gift IDs to `Rose`, `Roses`, `Perfume`, or `Bear`. Only provisional Rose ID `5655` is configured. **Confirm this against the chosen LIVE catalog and add the other three IDs before live use.** Unknown gifts do not create blocks. The authenticated `GET /session/gifts` endpoint exposes the connector's available catalog after connection; polling includes an unmapped counter. Never infer a tier from total coins: 100 roses remain 100 Rose gifts.
+Defaults come from `data/game-gifts.json`, a four-record subset of the owner's supplied `tiktok_gifts.json`. `GIFT_IDS` in .env is an optional override. Both local and VPS initial one-gift overrides were removed to activate the database mappings. Unknown gifts do not create blocks. The authenticated `GET /session/gifts` endpoint lists gift IDs/names observed during that session without fetching the premium extended catalog; polling includes an unmapped counter. Never infer a tier from total coins: 100 roses remain 100 Rose gifts.
+
+| Database name | Gift ID | Coins | Game action |
+| --- | --- | --- | --- |
+| Rose | 5655 | 1 | Rose: +10 blocks |
+| Rosa | 8913 | 10 | Roses: +100 blocks |
+| Perfume | 5658 | 20 | Perfume: freeze 10s |
+| Mishka Bear | 5566 | 100 | Bear: +1000 blocks |
+
+Mishka Bear was chosen for the existing “อุ้มใจหมี” slot based on its bear name and 100-coin price; other 100-coin gifts such as Hand Heart are not treated as Bear. This mapping follows the owner's database snapshot; future TikTok regional catalogs may change.
 
 Current game rules: Rose +10 blocks, Roses +100, Perfume freezes 10s per unit, Bear +1000. Streak gifts are accepted at repeatEnd and use repeatCount. Large quantities are split according to queue capacity and retried with stable chunk IDs.
 
@@ -65,6 +74,6 @@ node --env-file=.env bridge/smoke.mjs https://acmagnet.aclassstore.com channel_h
 
 Automated tests cover raw v3 and older connector payloads, streak totals, unsafe input, cursor replay/overflow, 16×16 RGB packing, allowed avatar hosts, authentication, session isolation, stream-end draining and signing rejection. Studio checks compile installed scripts, exercise pixel creation/cleanup, Bear quantity chunking, and cancellation during name filtering.
 
-Verified 2026-11-09: 10 Node tests pass, npm audit reports 0 vulnerabilities. Offline Studio Playtest with HTTP adapter disabled accepted a synthetic gift; client reported HUD=true, connectionUI=true, 96 profile blocks and 0 fallback renderers. Output contained only the normal ready message. Stopped Playtest and re-enabled the HTTP adapter afterward. This was a generated test portrait, not a received LIVE profile. Actual TikTok probe: look.chan7 offline; natthapornsrichinwinit1 failed at signing provider with Business-plan requirement. Studio HTTPS probe was denied by Assistant domain allowlist; no workaround was used. End-to-end HTTP/LIVE receipts remain unverified.
+Verified 2026-11-09: 11 Node tests pass locally and on VPS, npm audit reports 0 vulnerabilities. Offline Studio Playtest with HTTP adapter disabled accepted a synthetic gift; client reported HUD=true, connectionUI=true, 96 profile blocks and 0 fallback renderers. Output contained only the normal ready message. Stopped Playtest and re-enabled HTTP adapter afterward. This was a generated test portrait, not a received LIVE gift. After disabling extended catalog fetching, both a VPS connector probe and the deployed authenticated HTTPS session API connected to the public channel `natthapornsrichinwinit1` with status LIVE. The smoke test confirmed unauthenticated requests return 401, then disconnected its test session. Studio HTTPS probe remains denied by Assistant domain allowlist; no workaround was used. Actual LIVE gift-to-Roblox acceptance and published behavior remain unverified.
 
 For hosting, the Dockerfile listens on 0.0.0.0:8787; supply MAGNET_KEY, GIFT_IDS and optional SIGN_API_KEY as host-managed environment variables. Put HTTPS in front and configure LiveConfig accordingly. The container was not built or deployed in this task.

@@ -1,0 +1,62 @@
+[
+  {
+    "id": 5655,
+    "key": "Rose",
+    "name": "Rose",
+    "coins": 1,
+    "type": 1,
+    "image": "https://p16-webcast.tiktokcdn.com/img/maliva/webcast-va/eba3a9bb85c33e017f3648eaf88d7189~tplv-obj.webp",
+    "aliases": [
+      "กุหลาบ"
+    ],
+    "regions": [
+      "TH",
+      "US"
+    ]
+  },
+  {
+    "id": 8913,
+    "key": "Roses",
+    "name": "Rosa",
+    "coins": 10,
+    "type": 1,
+    "image": "https://p16-webcast.tiktokcdn.com/img/maliva/webcast-va/eb77ead5c3abb6da6034d3cf6cfeb438~tplv-obj.webp",
+    "aliases": [
+      "โรซ่า"
+    ],
+    "regions": [
+      "TH",
+      "US"
+    ]
+  },
+  {
+    "id": 5658,
+    "key": "Perfume",
+    "name": "Perfume",
+    "coins": 20,
+    "type": 1,
+    "image": "https://p16-webcast.tiktokcdn.com/img/maliva/webcast-va/20b8f61246c7b6032777bb81bf4ee055~tplv-obj.webp",
+    "aliases": [
+      "น้ำหอม"
+    ],
+    "regions": [
+      "TH",
+      "US"
+    ]
+  },
+  {
+    "id": 5566,
+    "key": "Bear",
+    "name": "Mishka Bear",
+    "coins": 100,
+    "type": 2,
+    "image": "https://p16-webcast.tiktokcdn.com/img/maliva/webcast-va/d78ed6496fd57286b42ac033acbee299.png~tplv-obj.webp",
+    "aliases": [
+      "หมีมีชคา"
+    ],
+    "regions": [
+      "TH",
+      "US"
+    ]
+  }
+]
