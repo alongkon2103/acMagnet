@@ -69,6 +69,7 @@ local keymap={[Enum.KeyCode.One]="Rose",[Enum.KeyCode.Two]="Roses",[Enum.KeyCode
 UIS.InputBegan:Connect(function(input,processed)if not processed and keymap[input.KeyCode]then sendGift(keymap[input.KeyCode])end end)
 local visuals = make("Folder",{Name="LocalGiftBlocks"},workspace)
 local PixelPortrait=require(kit:WaitForChild("PixelPortrait"))
+local CaptureAudio=require(kit:WaitForChild("CaptureAudio"))
 local Motion=require(kit:WaitForChild("BlockMotion"))
 local roundedTemplate=kit:WaitForChild("RoundedBlock")
 local blocks = {}
@@ -181,6 +182,7 @@ local function received(action,payload)
         animated[id]=nil
         local b=blocks[id]
         if b then
+            if b.owner==player.UserId then CaptureAudio.Play() end
             releaseBeam(b)
             PixelPortrait.Clear(b.part)
             if b.templateId and pooledCount<Config.MaxActive then

@@ -1,3 +1,4 @@
+local TweenService=game:GetService("TweenService")
 local Players=game:GetService("Players")
 local player=Players.LocalPlayer
 local kit=game:GetService("ReplicatedStorage"):WaitForChild("BlackHole")
@@ -8,29 +9,64 @@ local gui=Instance.new("ScreenGui");gui.Name="TikTokConnect";gui.ResetOnSpawn=fa
 local toggle=Art.New("ImageButton","menu",{Name="LiveMenu",AnchorPoint=Vector2.new(1,1),Position=UDim2.new(1,-16,1,-16),Size=UDim2.fromOffset(44,46),Visible=false,AutoButtonColor=true},gui)
 local dot=Instance.new("Frame");dot.Name="LiveDot";dot.BorderSizePixel=0;dot.Size=UDim2.fromOffset(7,7);dot.Position=UDim2.new(1,-9,0,3);dot.Parent=toggle
 local dotCorner=Instance.new("UICorner");dotCorner.CornerRadius=UDim.new(1,0);dotCorner.Parent=dot
-local panel=Instance.new("Frame");panel.Name="Frame";panel.Visible=false;panel.BackgroundColor3=Color3.fromRGB(242,237,225);panel.BorderSizePixel=0
-panel.AnchorPoint=Vector2.new(1,1);panel.Position=UDim2.new(1,-16,1,-76);panel.Size=UDim2.fromOffset(280,134);panel.Parent=gui
+local panel=Instance.new("CanvasGroup");panel.Name="Frame";panel.Visible=false;panel.BackgroundColor3=Color3.fromRGB(242,237,225);panel.BorderSizePixel=0
+panel.AnchorPoint=Vector2.new(1,1);panel.Position=UDim2.new(1,-16,1,-76);panel.Size=UDim2.fromOffset(280,244);panel.GroupTransparency=1;panel.Parent=gui
 local corner=Instance.new("UICorner");corner.CornerRadius=UDim.new(0,12);corner.Parent=panel
 local function label(text,y,size)
     local l=Instance.new("TextLabel");l.BackgroundTransparency=1;l.Text=text;l.Font=Enum.Font.GothamMedium;l.TextSize=size or 12
     l.TextColor3=Color3.fromRGB(54,62,51);l.TextXAlignment=Enum.TextXAlignment.Left;l.Position=UDim2.fromOffset(12,y);l.Size=UDim2.fromOffset(256,24);l.Parent=panel;return l
 end
-label("TikTok LIVE",8,14)
+label("ตั้งค่า",8,14)
 local close=Instance.new("TextButton");close.Name="Close";close.Text="×";close.TextSize=20;close.BackgroundTransparency=1;close.Size=UDim2.fromOffset(28,28);close.Position=UDim2.new(1,-34,0,6);close.Parent=panel
 local input=Instance.new("TextBox");input.Name="TextBox";input.PlaceholderText="@ชื่อช่อง";input.Text="";input.ClearTextOnFocus=false
 input.Font=Enum.Font.Gotham;input.TextSize=14;input.TextColor3=Color3.fromRGB(54,62,51);input.BackgroundColor3=Color3.fromRGB(225,226,213);input.BorderSizePixel=0
-input.Position=UDim2.fromOffset(12,42);input.Size=UDim2.fromOffset(160,32);input.Parent=panel
+input.Position=UDim2.fromOffset(12,86);input.Size=UDim2.fromOffset(160,32);input.Parent=panel
 local inputCorner=Instance.new("UICorner");inputCorner.CornerRadius=UDim.new(0,6);inputCorner.Parent=input
 local button=Instance.new("TextButton");button.Name="TextButton";button.Text="เชื่อมต่อ";button.Font=Enum.Font.GothamMedium;button.TextSize=12;button.BorderSizePixel=0
-button.BackgroundColor3=Color3.fromRGB(111,144,113);button.TextColor3=Color3.fromRGB(255,253,241);button.Position=UDim2.fromOffset(180,42);button.Size=UDim2.fromOffset(88,32);button.Parent=panel
+button.BackgroundColor3=Color3.fromRGB(111,144,113);button.TextColor3=Color3.fromRGB(255,253,241);button.Position=UDim2.fromOffset(180,86);button.Size=UDim2.fromOffset(88,32);button.Parent=panel
 local buttonCorner=Instance.new("UICorner");buttonCorner.CornerRadius=UDim.new(0,6);buttonCorner.Parent=button
-local current=label("ยังไม่เชื่อมต่อ",88)
+local current=label("ยังไม่เชื่อมต่อ",132)
 local names={DISCONNECTED="ยังไม่เชื่อมต่อ",CONNECTING="กำลังเชื่อมต่อ…",LIVE="เชื่อมต่อแล้ว",DRAINING="กำลังรับรายการท้ายไลฟ์…",RETRYING="กำลังเชื่อมต่อใหม่…",OFFLINE="จบ LIVE แล้ว",ERROR="เชื่อมต่อไม่ได้",SETUP_REQUIRED="ยังไม่ได้ตั้งค่า Backend",INVALID_USERNAME="ชื่อช่องไม่ถูกต้อง",BACKPRESSURE="กำลังรอคิว"}
 local active=false
+local activeTab="magnet"
+local options=require(kit:WaitForChild("MagnetOptions")).Create(panel)
+local function tab(name,title,x)
+    local b=Instance.new("TextButton");b.Name=name;b.Text=title;b.TextSize=12;b.Font=Enum.Font.GothamMedium;b.BorderSizePixel=0
+    b.Position=UDim2.fromOffset(x,42);b.Size=UDim2.fromOffset(124,28);b.Parent=panel
+    local c=Instance.new("UICorner");c.CornerRadius=UDim.new(0,7);c.Parent=b;return b
+end
+local magnetTab=tab("MagnetTab","แม่เหล็ก",12)
+local liveTab=tab("LiveTab","LIVE",144)
+local function page()
+    local allowed=player:GetAttribute("CanControlTikTok")==true
+    if not allowed then activeTab="magnet"end
+    local magnet=activeTab=="magnet"
+    options.Root.Visible=magnet;input.Visible=not magnet;button.Visible=not magnet;current.Visible=not magnet
+    liveTab.Visible=allowed
+    magnetTab.BackgroundColor3=magnet and Color3.fromRGB(211,222,199)or Color3.fromRGB(231,231,219)
+    liveTab.BackgroundColor3=not magnet and Color3.fromRGB(211,222,199)or Color3.fromRGB(231,231,219)
+    magnetTab.TextColor3=Color3.fromRGB(54,62,51);liveTab.TextColor3=Color3.fromRGB(54,62,51)
+    panel.Size=UDim2.fromOffset(280,magnet and 244 or 172)
+end
+magnetTab.Activated:Connect(function()activeTab="magnet";page()end)
+liveTab.Activated:Connect(function()if player:GetAttribute("CanControlTikTok")then options.StopDrag();activeTab="live";page()end end)
+local wanted,version=false,0
+local panelTween
+local function setOpen(open)
+    if wanted==open then return end
+    wanted=open;version+=1;local own=version
+    if panelTween then panelTween:Cancel()end
+    panel.Visible=true
+    if open then panel.GroupTransparency=1;panel.Position=UDim2.new(1,-16,1,-68)end
+    panelTween=TweenService:Create(panel,TweenInfo.new(.18,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{GroupTransparency=open and 0 or 1,Position=UDim2.new(1,-16,1,open and -76 or -68)})
+    panelTween:Play()
+    if not open then task.delay(.19,function()if version==own and not wanted then panel.Visible=false end end)end
+end
+
 local function refresh()
     local allowed=player:GetAttribute("CanControlTikTok")==true
-    toggle.Visible=allowed
-    panel.Visible=allowed and player:GetAttribute("MagnetPopup")=="live"
+    toggle.Visible=true;dot.Visible=allowed
+    page();setOpen(player:GetAttribute("MagnetPopup")=="live")
     local s=state:GetAttribute("Status") or "DISCONNECTED"
     active=s=="LIVE" or s=="CONNECTING" or s=="RETRYING" or s=="BACKPRESSURE" or s=="DRAINING"
     button.Text=active and "หยุดเชื่อม" or "เชื่อมต่อ"
@@ -39,7 +75,7 @@ local function refresh()
     local dropped=state:GetAttribute("Dropped") or 0
     if dropped>0 then current.Text..=" • สูญหาย "..dropped end
 end
-toggle.Activated:Connect(function()player:SetAttribute("MagnetPopup",panel.Visible and "" or "live")end)
+toggle.Activated:Connect(function()player:SetAttribute("MagnetPopup",player:GetAttribute("MagnetPopup")=="live" and "" or "live")end)
 close.Activated:Connect(function()player:SetAttribute("MagnetPopup","")end)
 button.Activated:Connect(function()
     control:FireServer(active and "disconnect" or "connect",input.Text)
@@ -50,5 +86,6 @@ player:GetAttributeChangedSignal("CanControlTikTok"):Connect(refresh)
 player:GetAttributeChangedSignal("MagnetPopup"):Connect(refresh)
 local scale=Instance.new("UIScale");scale.Parent=panel
 local camera=workspace.CurrentCamera
-local function resize()scale.Scale=math.min(1,(camera.ViewportSize.X-32)/280)end
-camera:GetPropertyChangedSignal("ViewportSize"):Connect(resize);resize();refresh()
+local function resize()scale.Scale=math.max(.5,math.min(1,(gui.AbsoluteSize.X-32)/280,(gui.AbsoluteSize.Y-96)/244))end
+camera:GetPropertyChangedSignal("ViewportSize"):Connect(resize)
+gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(resize);resize();refresh()
