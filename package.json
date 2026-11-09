@@ -1,0 +1,1 @@
+{"name":"acmagnet-live","private":true,"type":"module","scripts":{"start":"node --env-file=.env bridge/server.mjs","test":"node --test bridge/*.test.mjs"},"dependencies":{"sharp":"^0.35.5","tiktok-live-connector":"^2.1.0"}}

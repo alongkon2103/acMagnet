@@ -1,0 +1,45 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {EventEmitter} from 'node:events';
+import {createBridge} from './http.mjs';
+test('authenticated sessions isolate events, replay and disconnect',async(t)=>{
+ const connections=[];
+ const app=createBridge({key:'test-key-that-is-at-least-32-characters',giftMap:{'5655':'Rose'},connect:()=>{const c=new EventEmitter();c.connect=async()=>({});c.disconnect=()=>{};connections.push(c);return c;},pixels:async()=>Array(256).fill(0xff8000)});
+ await new Promise(r=>app.server.listen(0,'127.0.0.1',r));t.after(()=>app.close());
+ const base='http://127.0.0.1:'+app.server.address().port;
+ const headers={'x-magnet-key':'test-key-that-is-at-least-32-characters','x-magnet-session':'a'.repeat(32),'content-type':'application/json'};
+ assert.equal((await fetch(base+'/connect',{method:'POST',body:'{}'})).status,401);
+ assert.equal((await fetch(base+'/connect',{method:'POST',headers,body:'{"username":"host"}'})).status,202);
+ await new Promise(r=>setTimeout(r,10));
+ connections[0].emit('gift',{giftId:5655,msgId:'12345',repeatCount:2,user:{uniqueId:'sender'}});
+ await new Promise(r=>setTimeout(r,10));
+ const response=await (await fetch(base+'/session/events?after=0',{headers})).json();
+ assert.equal(response.status,'LIVE');assert.equal(response.events[0].quantity,2);
+ assert.equal(response.events[0].sender.pixels.length,256);
+ const again=await(await fetch(base+'/session/events?after=0',{headers})).json();assert.equal(again.cursor,response.cursor);
+ assert.equal((await fetch(base+'/session/events?after=-1',{headers})).status,400);
+ const other=await(await fetch(base+'/session/events?after=0',{headers:{...headers,'x-magnet-session':'b'.repeat(32)}})).json();assert.equal(other.status,'DISCONNECTED');
+ await fetch(base+'/disconnect',{method:'POST',headers,body:'{}'});
+ assert.equal((await(await fetch(base+'/session/events?after=0',{headers})).json()).status,'DISCONNECTED');
+});
+test('stream end drains gifts waiting for avatars before terminal status',async(t)=>{
+ let c,finish;
+ const app=createBridge({key:'test-key-that-is-at-least-32-characters',giftMap:{'5655':'Rose'},connect:()=>{c=new EventEmitter();c.connect=async()=>({});c.disconnect=()=>{};return c;},pixels:()=>new Promise(r=>finish=r)});
+ await new Promise(r=>app.server.listen(0,'127.0.0.1',r));t.after(()=>app.close());
+ const base='http://127.0.0.1:'+app.server.address().port;
+ const headers={'x-magnet-key':'test-key-that-is-at-least-32-characters','x-magnet-session':'c'.repeat(32),'content-type':'application/json'};
+ await fetch(base+'/connect',{method:'POST',headers,body:'{"username":"host"}'});
+ c.emit('gift',{giftId:5655,msgId:'endgift',user:{displayId:'viewer'}});c.emit('streamEnd');
+ const pending=await(await fetch(base+'/session/events?after=0',{headers})).json();assert.equal(pending.status,'DRAINING');
+ finish(Array(256).fill(0));await new Promise(r=>setTimeout(r,10));
+ const drained=await(await fetch(base+'/session/events?after=0',{headers})).json();assert.equal(drained.events[0].id,'gift:endgift');assert.equal(drained.status,'OFFLINE');
+});
+test('signing provider rejection is actionable instead of infinite retries',async(t)=>{
+ const app=createBridge({key:'test-key-that-is-at-least-32-characters',giftMap:{},connect:()=>{const c=new EventEmitter();c.connect=async()=>{const e=new Error('signing unavailable');e.name='SignatureMissingTokensError';throw e;};c.disconnect=()=>{};return c;}});
+ await new Promise(r=>app.server.listen(0,'127.0.0.1',r));t.after(()=>app.close());
+ const base='http://127.0.0.1:'+app.server.address().port;
+ const headers={'x-magnet-key':'test-key-that-is-at-least-32-characters','x-magnet-session':'d'.repeat(32),'content-type':'application/json'};
+ await fetch(base+'/connect',{method:'POST',headers,body:'{"username":"host"}'});
+ await new Promise(r=>setTimeout(r,10));
+ const result=await(await fetch(base+'/session/events?after=0',{headers})).json();assert.equal(result.status,'SIGNING_REQUIRED');
+});
