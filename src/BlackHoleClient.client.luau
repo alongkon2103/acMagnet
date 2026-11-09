@@ -71,6 +71,7 @@ local visuals = make("Folder",{Name="LocalGiftBlocks"},workspace)
 local PixelPortrait=require(kit:WaitForChild("PixelPortrait"))
 local CaptureAudio=require(kit:WaitForChild("CaptureAudio"))
 local Motion=require(kit:WaitForChild("BlockMotion"))
+local Arena=require(kit:WaitForChild("ArenaMath"))
 local roundedTemplate=kit:WaitForChild("RoundedBlock")
 local blocks = {}
 local animated = {}
@@ -121,7 +122,7 @@ local function add(data)
     if blocks[data.id] or removed[data.id] then return end
     local capture=pendingCaptures[data.id]
     if capture then
-        data.capture=capture.capture; data.owner=capture.owner; data.target=capture.target
+        data.capture=capture.capture; data.owner=capture.owner; data.target=capture.target; data.captureOrigin=capture.origin
         pendingCaptures[data.id]=nil
     end
     local templateId=tostring(math.floor(math.abs(data.sender.seed))%16+1)
@@ -148,7 +149,9 @@ local function add(data)
         portrait(p,data.sender.seed)
     end
     local offset,rotation=Motion.Rest(math.max(0,(state:GetAttribute("Clock") or 0)-data.birth),data.angle,data.sender.seed)
-    p.CFrame=CFrame.new(data.position+Vector3.new(0,1.1,0)+offset)*rotation
+    local scale=Arena.Read()
+    local worldPosition=data.position*scale+Vector3.new(0,Arena.FloorOffset(scale),0)
+    p.CFrame=CFrame.new(worldPosition+Vector3.new(0,1.1,0)+offset)*rotation
     p.LocalTransparencyModifier=0
     data.part=p
     data.baseSize=p.Size
@@ -157,7 +160,7 @@ local function add(data)
     if data.capture or sim-data.birth<.9 then
         animated[data.id]=data
     else
-        p.CFrame=CFrame.new(data.position.X,1.1,data.position.Z)*CFrame.Angles(0,data.angle,0)
+        p.CFrame=CFrame.new(worldPosition+Vector3.new(0,1.1,0))*CFrame.Angles(0,data.angle,0)
     end
 end
 local toastVersion = 0
@@ -173,7 +176,7 @@ local function received(action,payload)
     elseif action=="Captures" or action=="Capture" then
         for _,capture in (action=="Captures" and payload or {payload}) do
             local b=blocks[capture.id]
-            if b then b.capture=capture.capture; b.owner=capture.owner; b.target=capture.target; animated[b.id]=b
+            if b then b.capture=capture.capture; b.owner=capture.owner; b.target=capture.target; b.captureOrigin=capture.origin; animated[b.id]=b
             elseif not removed[capture.id] then pendingCaptures[capture.id]=capture end
         end
     elseif action=="Remove" then for _,id in payload do
@@ -218,6 +221,7 @@ RunService:BindToRenderStep("MagnetFollowCamera",Enum.RenderPriority.Camera.Valu
     camera.CFrame=CFrame.lookAt(focus+Config.CameraOffset,focus)
     camera.Focus=CFrame.new(focus)
 end)
+local previousArenaScale=Arena.Read()
 RunService.RenderStepped:Connect(function(dt)
     -- Spread large gifts and round resets across frames instead of stalling one frame.
     local budgetStart=os.clock()
@@ -230,22 +234,27 @@ RunService.RenderStepped:Connect(function(dt)
     local now=workspace:GetServerTimeNow()
     local remain=math.max(0,(state:GetAttribute("FreezeUntil") or 0)-now)
     local frozen=remain>0
+    local arenaScale=Arena.Read(now)
+    local arenaMoving=math.abs(arenaScale-previousArenaScale)>.00001
+    previousArenaScale=arenaScale
+    if arenaMoving then for id,b in blocks do if not b.capture then animated[id]=b end end end
     local sim=(state:GetAttribute("Clock") or 0)+(frozen and 0 or math.clamp(now-(state:GetAttribute("SyncedAt") or now),0,.3))
     -- Animate only spawning/captured blocks, at the display's render rate.
     -- Settled blocks require no per-frame iteration or transform writes.
     table.clear(moveParts)
     table.clear(moveCFrames)
-    if not frozen then
+    if not frozen or arenaMoving then
     for id,b in animated do
+            if frozen and b.capture then continue end
             local age=math.max(0,sim-b.birth)
-            local position=b.position
+            local position=b.position*arenaScale+Vector3.new(0,Arena.FloorOffset(arenaScale),0)
             local offset,rotation,settled=Motion.Rest(age,b.angle,b.sender.seed)
             local pose=CFrame.new(position+Vector3.new(0,1.1,0)+offset)*rotation
             if b.capture then
                 local t=math.clamp((sim-b.capture)/Config.CaptureSeconds,0,1)
                 local target,muzzle=magnetTarget(b.owner,b.target)
                 local shrink,fade
-                pose,shrink,fade=Motion.Capture(b.position,target,math.max(0,b.capture-b.birth),t,b.angle,b.sender.seed)
+                pose,shrink,fade=Motion.Capture(b.captureOrigin or position,target,math.max(0,b.capture-b.birth),t,b.angle,b.sender.seed)
                 b.part.Size=b.baseSize*shrink
                 b.part.LocalTransparencyModifier=fade
                 if not b.beam and muzzle and beamCount<18 then
@@ -258,7 +267,7 @@ RunService.RenderStepped:Connect(function(dt)
             end
             table.insert(moveParts,b.part)
             table.insert(moveCFrames,pose)
-            if not b.capture and settled then animated[id]=nil end
+            if not b.capture and settled and not arenaMoving then animated[id]=nil end
     end
     end
     PixelPortrait.UpdateVisibility(camera.CFrame.Position)

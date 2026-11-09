@@ -6,8 +6,7 @@ local Config=require(kit.Config)
 if player:GetAttribute("MagnetRingEnabled")==nil then player:SetAttribute("MagnetRingEnabled",false)end
 local parts,transforms={},{}
 local folder=Instance.new("Folder");folder.Name="LocalMagnetRange"
-local floor=workspace:WaitForChild("BlackHoleArena"):FindFirstChild("FloorTile")
-local floorY=(floor and floor.Position.Y+floor.Size.Y/2 or .2)+.04
+local floor=workspace:WaitForChild("BlackHoleArena"):FindFirstChild("FloorTile",true)
 local radius=Config.PullRadius
 local opacity,lastOpacity=0,-1
 local segments=48
@@ -28,6 +27,7 @@ RunService.RenderStepped:Connect(function(dt)
     local root=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     if not root then folder.Parent=nil;return end
     build();folder.Parent=workspace
+    local floorY=(floor and floor.Position.Y+floor.Size.Y/2 or .2)+.04
     local center=Vector3.new(root.Position.X,floorY,root.Position.Z)
     local length=2*radius*math.sin(math.pi/segments)*1.01
     local alpha=1-opacity*.62

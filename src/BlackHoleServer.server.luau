@@ -4,6 +4,7 @@ local Players = game:GetService("Players")
 Players.CharacterAutoLoads = true
 local kit = RS:WaitForChild("BlackHole")
 local Config = require(kit.Config)
+local Arena = require(kit:WaitForChild("ArenaMath"))
 local event = kit.Event
 local snapshot = kit.Snapshot
 local testGift = kit.TestGift
@@ -110,6 +111,15 @@ enqueue(Config.InitialBlocks, {name = "MAGNET LAB", seed = 101})
 sync()
 RunService.Heartbeat:Connect(function(dt)
     local now = workspace:GetServerTimeNow()
+    local arenaScale,targetScale=Arena.Read(now)
+    -- Network-owned characters carry inward locally. Let that position arrive before a safety correction.
+    local recentScale=Arena.Read(now-Config.ArenaBoundaryGraceSeconds)
+    local arenaRadius=Config.ArenaRadius*math.max(arenaScale,recentScale)
+    local contracting=arenaScale>targetScale+.00001 or recentScale>arenaScale+.00001
+    if contracting then
+        local startScale=Arena.Read(now-Config.ArenaResizeSeconds)
+        arenaRadius=Config.ArenaRadius*math.max(arenaScale,startScale)
+    end
     local frozen=now<freezeUntil
     if not frozen then clock += dt end
     for _,player in Players:GetPlayers() do
@@ -120,8 +130,8 @@ RunService.Heartbeat:Connect(function(dt)
             local speed=frozen and 0 or Config.PlayerSpeed
             if humanoid.WalkSpeed~=speed then humanoid.WalkSpeed=speed end
             local position=Vector3.new(root.Position.X,0,root.Position.Z)
-            if position.Magnitude>43 then
-                position=position.Unit*42.8
+            if position.Magnitude>arenaRadius then
+                position=position.Unit*(arenaRadius-.2)
                 root.CFrame=CFrame.new(position.X,root.Position.Y,position.Z)*root.CFrame.Rotation
                 root.AssemblyLinearVelocity=Vector3.zero
             end
@@ -139,7 +149,8 @@ RunService.Heartbeat:Connect(function(dt)
     while spawnBudget >= 1 and count < Config.MaxActive and #queue > 0 do
         local job = queue[1]
         nextId += 1
-        local radius, angle = math.sqrt(random:NextNumber())*43, random:NextNumber(0, math.pi*2)
+        -- Canonical coordinates scale with the room, without replicating every block each frame.
+        local radius, angle = math.sqrt(random:NextNumber())*Config.ArenaRadius, random:NextNumber(0, math.pi*2)
         local block = {id = nextId, birth = clock,
             position = Vector3.new(math.cos(angle)*radius,0,math.sin(angle)*radius),
             angle = angle, sender = job.sender}
@@ -155,14 +166,15 @@ RunService.Heartbeat:Connect(function(dt)
         if not block.capture and now >= freezeUntil and clock-block.birth >= .5 then
             local nearest, distance = nil, Config.PullRadius
             for userId, position in holes do
-                local d = (position-block.position).Magnitude
+                local d = (position-block.position*arenaScale).Magnitude
                 if d < distance then nearest, distance = userId, d end
             end
             if nearest then
                 block.capture = clock
                 block.owner = nearest
                 block.target = holes[nearest]
-                table.insert(captures,{id=id, capture=clock, owner=nearest, target=block.target})
+                block.captureOrigin=block.position*arenaScale+Vector3.new(0,Arena.FloorOffset(arenaScale),0)
+                table.insert(captures,{id=id, capture=clock, owner=nearest, target=block.target,origin=block.captureOrigin})
             end
         end
         if block.capture and clock-block.capture >= Config.CaptureSeconds then

@@ -10,7 +10,7 @@ local toggle=Art.New("ImageButton","menu",{Name="LiveMenu",AnchorPoint=Vector2.n
 local dot=Instance.new("Frame");dot.Name="LiveDot";dot.BorderSizePixel=0;dot.Size=UDim2.fromOffset(7,7);dot.Position=UDim2.new(1,-9,0,3);dot.Parent=toggle
 local dotCorner=Instance.new("UICorner");dotCorner.CornerRadius=UDim.new(1,0);dotCorner.Parent=dot
 local panel=Instance.new("CanvasGroup");panel.Name="Frame";panel.Visible=false;panel.BackgroundColor3=Color3.fromRGB(242,237,225);panel.BorderSizePixel=0
-panel.AnchorPoint=Vector2.new(1,1);panel.Position=UDim2.new(1,-16,1,-76);panel.Size=UDim2.fromOffset(280,162);panel.GroupTransparency=1;panel.Parent=gui
+panel.AnchorPoint=Vector2.new(1,1);panel.Position=UDim2.new(1,-16,1,-76);panel.Size=UDim2.fromOffset(280,244);panel.GroupTransparency=1;panel.Parent=gui
 local corner=Instance.new("UICorner");corner.CornerRadius=UDim.new(0,12);corner.Parent=panel
 local function label(text,y,size)
     local l=Instance.new("TextLabel");l.BackgroundTransparency=1;l.Text=text;l.Font=Enum.Font.GothamMedium;l.TextSize=size or 12
@@ -46,10 +46,10 @@ local function page()
     magnetTab.BackgroundColor3=magnet and Color3.fromRGB(211,222,199)or Color3.fromRGB(231,231,219)
     liveTab.BackgroundColor3=not magnet and Color3.fromRGB(211,222,199)or Color3.fromRGB(231,231,219)
     magnetTab.TextColor3=Color3.fromRGB(54,62,51);liveTab.TextColor3=Color3.fromRGB(54,62,51)
-    panel.Size=UDim2.fromOffset(280,magnet and 162 or 172)
+    panel.Size=UDim2.fromOffset(280,magnet and 244 or 172)
 end
 magnetTab.Activated:Connect(function()activeTab="magnet";page()end)
-liveTab.Activated:Connect(function()if player:GetAttribute("CanControlTikTok")then activeTab="live";page()end end)
+liveTab.Activated:Connect(function()if player:GetAttribute("CanControlTikTok")then options.StopDrag();activeTab="live";page()end end)
 local wanted,version=false,0
 local panelTween
 local function setOpen(open)
@@ -86,6 +86,6 @@ player:GetAttributeChangedSignal("CanControlTikTok"):Connect(refresh)
 player:GetAttributeChangedSignal("MagnetPopup"):Connect(refresh)
 local scale=Instance.new("UIScale");scale.Parent=panel
 local camera=workspace.CurrentCamera
-local function resize()scale.Scale=math.max(.5,math.min(1,(gui.AbsoluteSize.X-32)/280,(gui.AbsoluteSize.Y-96)/172))end
+local function resize()scale.Scale=math.max(.5,math.min(1,(gui.AbsoluteSize.X-32)/280,(gui.AbsoluteSize.Y-96)/244))end
 camera:GetPropertyChangedSignal("ViewportSize"):Connect(resize)
 gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(resize);resize();refresh()

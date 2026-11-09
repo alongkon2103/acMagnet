@@ -7,7 +7,8 @@ local function make(class,props,parent)
 end
 local function round(v,r)make("UICorner",{CornerRadius=UDim.new(0,r)},v)end
 function Options.Create(panel)
-    local root=make("Frame",{Name="MagnetOptions",BackgroundTransparency=1,Position=UDim2.fromOffset(12,80),Size=UDim2.fromOffset(256,68)},panel)
+    local root=make("Frame",{Name="MagnetOptions",BackgroundTransparency=1,Position=UDim2.fromOffset(12,80),Size=UDim2.fromOffset(256,150)},panel)
+    local arenaOptions=require(game.ReplicatedStorage.BlackHole:WaitForChild("ArenaOptions")).Create(root)
     local function text(str,x,y,w)
         return make("TextLabel",{Text=str,BackgroundTransparency=1,TextSize=12,Font=Enum.Font.GothamMedium,TextColor3=Color3.fromRGB(54,62,51),TextXAlignment=Enum.TextXAlignment.Left,Position=UDim2.fromOffset(x,y),Size=UDim2.fromOffset(w,24)},root)
     end
@@ -25,8 +26,8 @@ function Options.Create(panel)
         button.Activated:Connect(function()player:SetAttribute(attribute,not player:GetAttribute(attribute))end)
         player:GetAttributeChangedSignal(attribute):Connect(refresh);refresh()
     end
-    switch("RingToggle","แสดงวงระยะ","MagnetRingEnabled",0,false)
-    switch("SoundToggle","เสียงเก็บบล็อก","MagnetSoundEnabled",36,true)
-    return {Root=root}
+    switch("RingToggle","แสดงวงระยะ","MagnetRingEnabled",82,false)
+    switch("SoundToggle","เสียงเก็บบล็อก","MagnetSoundEnabled",118,true)
+    return {Root=root,StopDrag=arenaOptions.StopDrag}
 end
 return Options
