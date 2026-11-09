@@ -4,6 +4,10 @@ Backend and Roblox sources for MAGNET LAB, place `113965026399564`.
 
 ## Current setup
 
+Compact HUD update: the always-visible UI is now one 280×57 image plaque with the live block count and trophy/win count, plus two 44px tool buttons for authorized operators. The game heading, movement instructions, queue/consumed counters and permanent idle status were removed. LIVE connection and gift-test popups are hidden by default, mutually exclusive and only open on demand. Transient sender notices are one short truncated line; freeze/clear countdowns appear only while relevant.
+
+The actual artwork was generated with the built-in ImageGen tool, saved in `assets/ui/toylab-hud-v1.png`, and uploaded as approved group-owned image asset `134106926225991`. `HUDArt` uses measured atlas rectangles, scaled from the 1254px source to Roblox's verified 1024px texture. Source prompt and metadata accompany the PNG. Studio verified asset loading, hidden defaults, menu opening/closing, popup exclusion, Connect-to-LIVE and automatic collapse. iPhone 17 Pro portrait was checked at 401×778; Studio was restored to its original default viewport and LandscapeRight setting. Original scripts are backed up in ServerStorage.BeforeCompactHUD_20261109. No place publishing was performed.
+
 **Deployed:** `https://acmagnet.aclassstore.com` via named Cloudflare tunnel `ac-magnet` on `gamestore-vps`. Application `/var/www/acMagnet`, localhost port `3211`, PM2 processes `ac-magnet-bridge` and `ac-magnet-tunnel`, saved for restart. Studio LiveConfig points to this permanent URL. Public health check, authenticated session API and actual public TikTok LIVE connection passed from the VPS. Studio Assistant HTTPS access is verified after the owner added the domain to the allowlist.
 
 - `bridge/server.mjs`: authenticated session bridge on localhost:8787.

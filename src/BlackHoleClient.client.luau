@@ -27,51 +27,46 @@ local function text(parent, str, size, pos, bounds, color)
 end
 local gui = make("ScreenGui", {Name="BlackHoleHUD",ResetOnSpawn=false,IgnoreGuiInset=true}, player:WaitForChild("PlayerGui"))
 local root = make("Frame", {BackgroundTransparency=1,Size=UDim2.fromScale(1,1)}, gui)
-local title = text(root,"MAGNET LAB",26,UDim2.new(.5,-210,0,48),UDim2.fromOffset(420,42))
-local subtitle = text(root,"แม่เหล็กไฟฟ้า • WASD / ลูกศร เพื่อเก็บบล็อก",15,UDim2.new(.5,-220,0,92),UDim2.fromOffset(440,24),cyan)
-local score = make("Frame",{BackgroundColor3=dark,BackgroundTransparency=.02,Position=UDim2.new(.5,-200,0,126),Size=UDim2.fromOffset(400,68)},root)
-round(score,16)
-make("UIStroke",{Color=purple,Transparency=.4,Thickness=1},score)
-local activeText = text(score,"0 บล็อก",25,UDim2.fromOffset(4,5),UDim2.fromOffset(230,32))
-local pendingText = text(score,"คิว 0",12,UDim2.fromOffset(4,38),UDim2.fromOffset(230,20),cyan)
-local winText = text(score,"WIN 0",24,UDim2.fromOffset(235,6),UDim2.fromOffset(160,50),Color3.fromRGB(131,86,48))
-local status = text(root,"กำลังดูดบล็อก",21,UDim2.new(.5,-230,0,204),UDim2.fromOffset(460,34),cyan)
-local toast = text(root,"",17,UDim2.new(.5,-270,1,-233),UDim2.fromOffset(540,45))
-local panel = make("Frame",{BackgroundColor3=dark,BackgroundTransparency=.02,AnchorPoint=Vector2.new(.5,1),Position=UDim2.new(.5,0,1,-24),Size=UDim2.fromOffset(660,164)},root)
-round(panel,18)
-local testLabel = text(panel,"รายการของขวัญ",13,UDim2.fromOffset(0,5),UDim2.new(1,0,0,24),cyan)
-local buttons = {}
-local canTest = false
-local function sendGift(id) if canTest then kit.TestGift:FireServer(id) end end
+local Art=require(kit:WaitForChild("HUDArt"))
+local score=Art.New("ImageLabel","score",{Name="CompactScore",AnchorPoint=Vector2.new(.5,0),Position=UDim2.new(.5,0,0,12),Size=UDim2.fromOffset(280,57)},root)
+local activeText=text(score,"0 บล็อก",18,UDim2.fromOffset(48,11),UDim2.fromOffset(146,32))
+activeText.TextXAlignment=Enum.TextXAlignment.Left
+local winText=text(score,"0",16,UDim2.fromOffset(220,9),UDim2.fromOffset(46,27),Color3.fromRGB(255,249,231))
+winText.Font=Enum.Font.GothamBold;winText.TextStrokeColor3=Color3.fromRGB(104,65,35);winText.TextStrokeTransparency=.55
+local status=text(root,"",14,UDim2.new(.5,-130,0,74),UDim2.fromOffset(260,24),cyan)
+status.Name="ContextStatus";status.Visible=false
+local toast=text(root,"",13,UDim2.new(.5,0,1,-78),UDim2.fromOffset(340,24))
+toast.Name="GiftToast";toast.AnchorPoint=Vector2.new(.5,1);toast.TextWrapped=false;toast.TextTruncate=Enum.TextTruncate.AtEnd
+local panel=make("Frame",{Name="GiftPopup",Visible=false,BackgroundColor3=dark,BackgroundTransparency=0,AnchorPoint=Vector2.new(1,1),Position=UDim2.new(1,-16,1,-76),Size=UDim2.fromOffset(300,88)},root)
+round(panel,12)
+text(panel,"ทดสอบของขวัญ",12,UDim2.fromOffset(12,4),UDim2.fromOffset(276,20),cyan)
+local buttons={}
+local canTest=false
+local giftToggle=Art.New("ImageButton","gifts",{Name="GiftMenu",AnchorPoint=Vector2.new(1,1),Position=UDim2.new(1,-72,1,-16),Size=UDim2.fromOffset(44,46),Visible=false,AutoButtonColor=true},root)
+if player:GetAttribute("MagnetPopup")==nil then player:SetAttribute("MagnetPopup","") end
+local function refreshPopup()panel.Visible=canTest and player:GetAttribute("MagnetPopup")=="gifts" end
+player:GetAttributeChangedSignal("MagnetPopup"):Connect(refreshPopup)
+giftToggle.Activated:Connect(function()player:SetAttribute("MagnetPopup",panel.Visible and "" or "gifts")end)
+local function sendGift(id)if canTest then kit.TestGift:FireServer(id) end end
 for i,id in Config.Order do
-    local gift = Config.Gifts[id]
-    local b = make("TextButton",{Text="",AutoButtonColor=true,BackgroundColor3=Color3.fromRGB(231,228,217),
-        Position=UDim2.fromOffset(12+(i-1)*162,35),Size=UDim2.fromOffset(150,116)},panel)
-    round(b,12)
-    make("UIStroke",{Color=dark,Thickness=1,Transparency=.75},b)
-    text(b,tostring(i),12,UDim2.fromOffset(7,5),UDim2.fromOffset(18,18),gift.Color)
-    text(b,gift.Name,17,UDim2.fromOffset(0,15),UDim2.new(1,0,0,30),white)
-    text(b,gift.Blocks and "+"..gift.Blocks.." บล็อก" or "แช่แข็ง 10 วิ",16,UDim2.fromOffset(0,49),UDim2.new(1,0,0,27))
-    text(b,gift.Coins.." เหรียญ",14,UDim2.fromOffset(0,82),UDim2.new(1,0,0,22),Color3.fromRGB(95,105,90))
-    b.Activated:Connect(function() sendGift(id) end)
-    buttons[id] = b
+    local gift=Config.Gifts[id]
+    local b=make("TextButton",{Name=id,Text=gift.Name.."\n"..(gift.Blocks and "+"..gift.Blocks or "10 วิ"),TextSize=12,TextColor3=white,Font=Enum.Font.GothamMedium,AutoButtonColor=true,BackgroundColor3=Color3.fromRGB(227,229,215),Position=UDim2.fromOffset(12+(i-1)*72,28),Size=UDim2.fromOffset(66,48)},panel)
+    round(b,8);b.Activated:Connect(function()sendGift(id)end);buttons[id]=b
 end
-local scale = make("UIScale",{Scale=1},panel)
-local scoreScale = make("UIScale",{Scale=1},score)
+local scoreScale=make("UIScale",{Scale=1},score)
+local popupScale=make("UIScale",{Scale=1},panel)
 local function resize()
-    local width = camera.ViewportSize.X
-    scale.Scale = math.min(1,(width-24)/660)
-    local s = math.min(1,(width-24)/400)
-    scoreScale.Scale = s
-    score.Position = UDim2.new(.5,-200*s,0,126)
-    camera.FieldOfView = Config.CameraFOV
+    local width=camera.ViewportSize.X
+    scoreScale.Scale=math.min(1,(width-32)/280)
+    score.Position=UDim2.new(.5,0,0,width<600 and 56 or 12)
+    status.Position=UDim2.new(.5,-130,0,width<600 and 116 or 74)
+    popupScale.Scale=math.min(1,(width-32)/300)
+    toast.Size=UDim2.fromOffset(math.min(340,width-32),24)
+    camera.FieldOfView=Config.CameraFOV
 end
-camera:GetPropertyChangedSignal("ViewportSize"):Connect(resize)
-resize()
-local keymap = {[Enum.KeyCode.One]="Rose",[Enum.KeyCode.Two]="Roses",[Enum.KeyCode.Three]="Perfume",[Enum.KeyCode.Four]="Bear"}
-UIS.InputBegan:Connect(function(input, processed)
-    if not processed and keymap[input.KeyCode] then sendGift(keymap[input.KeyCode]) end
-end)
+camera:GetPropertyChangedSignal("ViewportSize"):Connect(resize);resize()
+local keymap={[Enum.KeyCode.One]="Rose",[Enum.KeyCode.Two]="Roses",[Enum.KeyCode.Three]="Perfume",[Enum.KeyCode.Four]="Bear"}
+UIS.InputBegan:Connect(function(input,processed)if not processed and keymap[input.KeyCode]then sendGift(keymap[input.KeyCode])end end)
 local visuals = make("Folder",{Name="LocalGiftBlocks"},workspace)
 local PixelPortrait=require(kit:WaitForChild("PixelPortrait"))
 local Motion=require(kit:WaitForChild("BlockMotion"))
@@ -199,13 +194,14 @@ local function received(action,payload)
     end
     elseif action=="Gift" then
         local gift=Config.Gifts[payload.id]
-        announce(payload.sender.name.." • "..gift.Name.." ×"..payload.quantity,gift.Color)
+        announce(payload.sender.name..(gift.Blocks and " +"..(gift.Blocks*payload.quantity) or " • หยุด "..(gift.Freeze*payload.quantity).." วิ"),cyan)
     elseif action=="Win" then announce("ลานสะอาด!  WIN "..payload,Color3.fromRGB(131,86,48)) end
 end
 kit.Event.OnClientEvent:Connect(received)
 local initial = kit.Snapshot:InvokeServer()
 canTest=initial.canTest
-testLabel.Text=canTest and "โหมดทดสอบฟรี • กด 1–4 หรือแตะของขวัญ • ส่งของขวัญทดสอบ" or "รายการของขวัญ • รอระบบเชื่อมต่อ LIVE"
+giftToggle.Visible=canTest
+refreshPopup()
 for _,b in initial.blocks do table.insert(pendingVisuals,b) end
 local hudAccumulator=0
 -- Follow the locally simulated character every rendered frame, not 10 Hz server snapshots.
@@ -269,9 +265,9 @@ RunService.RenderStepped:Connect(function(dt)
     if hudAccumulator>=.1 then
         hudAccumulator=0
         activeText.Text=tostring(state:GetAttribute("Active") or 0).." บล็อก"
-        pendingText.Text="คิว "..(state:GetAttribute("Pending") or 0).."  •  ดูดแล้ว "..(state:GetAttribute("Consumed") or 0)
-        winText.Text="WIN "..(state:GetAttribute("Wins") or 0)
+        winText.Text=tostring(state:GetAttribute("Wins") or 0)
         local countdown=state:GetAttribute("ClearCountdown") or -1
+        status.Visible=frozen or countdown>=0
         status.Text=frozen and string.format("แช่แข็ง  %.1f วิ",remain) or (countdown>=0 and "ลานสะอาดใน "..countdown.." วิ" or "กำลังดูดบล็อก")
         status.TextColor3=frozen and cyan or purple
     end
