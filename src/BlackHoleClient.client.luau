@@ -72,6 +72,7 @@ local PixelPortrait=require(kit:WaitForChild("PixelPortrait"))
 local CaptureAudio=require(kit:WaitForChild("CaptureAudio"))
 local Motion=require(kit:WaitForChild("BlockMotion"))
 local Arena=require(kit:WaitForChild("ArenaMath"))
+local BlockShadows=require(kit:WaitForChild("BlockShadows"))
 local roundedTemplate=kit:WaitForChild("RoundedBlock")
 local blocks = {}
 local animated = {}
@@ -153,6 +154,7 @@ local function add(data)
     local worldPosition=data.position*scale+Vector3.new(0,Arena.FloorOffset(scale),0)
     p.CFrame=CFrame.new(worldPosition+Vector3.new(0,1.1,0)+offset)*rotation
     p.LocalTransparencyModifier=0
+    p.CastShadow=false
     data.part=p
     data.baseSize=p.Size
     blocks[data.id]=data
@@ -162,6 +164,8 @@ local function add(data)
     else
         p.CFrame=CFrame.new(worldPosition+Vector3.new(0,1.1,0))*CFrame.Angles(0,data.angle,0)
     end
+    data.shadow=BlockShadows.Acquire()
+    data.shadow.CFrame=BlockShadows.Place(data.shadow,p.CFrame,scale,1,0)
 end
 local toastVersion = 0
 local function announce(message,color)
@@ -188,6 +192,7 @@ local function received(action,payload)
             if b.owner==player.UserId then CaptureAudio.Play() end
             releaseBeam(b)
             PixelPortrait.Clear(b.part)
+            BlockShadows.Release(b.shadow)
             if b.templateId and pooledCount<Config.MaxActive then
                 b.part.Parent=nil
                 blockPool[b.templateId]=blockPool[b.templateId] or {}
@@ -245,11 +250,17 @@ RunService.RenderStepped:Connect(function(dt)
     table.clear(moveCFrames)
     if not frozen or arenaMoving then
     for id,b in animated do
-            if frozen and b.capture then continue end
+            if frozen and b.capture then
+                local shrink=b.part.Size.X/b.baseSize.X
+                table.insert(moveParts,b.shadow)
+                table.insert(moveCFrames,BlockShadows.Place(b.shadow,b.part.CFrame,arenaScale,shrink,b.part.LocalTransparencyModifier))
+                continue
+            end
             local age=math.max(0,sim-b.birth)
             local position=b.position*arenaScale+Vector3.new(0,Arena.FloorOffset(arenaScale),0)
             local offset,rotation,settled=Motion.Rest(age,b.angle,b.sender.seed)
             local pose=CFrame.new(position+Vector3.new(0,1.1,0)+offset)*rotation
+            local shadowShrink,shadowFade=1,0
             if b.capture then
                 local t=math.clamp((sim-b.capture)/Config.CaptureSeconds,0,1)
                 local target,muzzle=magnetTarget(b.owner,b.target)
@@ -257,6 +268,7 @@ RunService.RenderStepped:Connect(function(dt)
                 pose,shrink,fade=Motion.Capture(b.captureOrigin or position,target,math.max(0,b.capture-b.birth),t,b.angle,b.sender.seed)
                 b.part.Size=b.baseSize*shrink
                 b.part.LocalTransparencyModifier=fade
+                shadowShrink,shadowFade=shrink,fade
                 if not b.beam and muzzle and beamCount<18 then
                     b.pullAttachment=make("Attachment",{},b.part)
                     b.beam=make("Beam",{Attachment0=b.pullAttachment,Attachment1=muzzle,FaceCamera=true,
@@ -267,6 +279,8 @@ RunService.RenderStepped:Connect(function(dt)
             end
             table.insert(moveParts,b.part)
             table.insert(moveCFrames,pose)
+            table.insert(moveParts,b.shadow)
+            table.insert(moveCFrames,BlockShadows.Place(b.shadow,pose,arenaScale,shadowShrink,shadowFade))
             if not b.capture and settled and not arenaMoving then animated[id]=nil end
     end
     end
