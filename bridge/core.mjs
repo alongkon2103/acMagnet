@@ -11,11 +11,15 @@ export function normalizeGift(d,map) {
  if(!['Rose','Roses','Perfume','Bear'].includes(giftId)||!Number.isSafeInteger(quantity)||quantity<1||quantity>10000||!raw||typeof raw==='number'&&!Number.isSafeInteger(raw)) return null;
  const id='gift:'+String(raw);
  if(id.length>140)return null;
- const u=d.user??d;
+ const profile=normalizeSender(d.user??d);
+ if(!profile)return null;
+ return {id,giftId,quantity,...profile};
+}
+export function normalizeSender(u) {
  const handle=u.displayId||u.uniqueId;
  if(typeof handle!=='string'||!handle.length||handle.length>80)return null;
  let seed=0;for(const c of handle)seed=(Math.imul(seed,31)+c.charCodeAt(0))>>>0;
- return {id,giftId,quantity,sender:{handle,name:'@'+handle,seed:seed%2147483647},avatarUrl:u.avatarLarge?.urlList?.[0]??u.avatarMedium?.urlList?.[0]??u.profilePicture?.urls?.[0]??u.profilePictureUrl};
+ return {sender:{handle,name:'@'+handle,seed:seed%2147483647},avatarUrl:u.avatarLarge?.urlList?.[0]??u.avatarMedium?.urlList?.[0]??u.profilePicture?.urls?.[0]??u.profilePictureUrl};
 }
 export class SessionQueue {
  constructor(limit=2000){this.limit=limit;this.events=[];this.seq=0;this.seen=new Map();this.dropped=0;}

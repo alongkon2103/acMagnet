@@ -16,7 +16,12 @@ test('authenticated sessions isolate events, replay and disconnect',async(t)=>{
  const response=await (await fetch(base+'/session/events?after=0',{headers})).json();
  assert.equal(response.status,'LIVE');assert.equal(response.events[0].quantity,2);
  assert.equal(response.events[0].sender.pixels.length,256);
- const again=await(await fetch(base+'/session/events?after=0',{headers})).json();assert.equal(again.cursor,response.cursor);
+ connections[0].emit('like',{common:{msgId:'like1'},count:49,user:{displayId:'liker'}});
+ connections[0].emit('like',{common:{msgId:'like2'},count:1,user:{displayId:'liker'}});
+ await new Promise(r=>setTimeout(r,10));
+ const likes=await(await fetch(base+'/session/events?after='+response.cursor,{headers})).json();
+ assert.equal(likes.events.length,1);assert.equal(likes.events[0].giftId,'Likes');assert.equal(likes.events[0].quantity,1);assert.equal(likes.events[0].sender.pixels.length,256);
+ const again=await(await fetch(base+'/session/events?after=0',{headers})).json();assert.equal(again.events[0].id,response.events[0].id);assert.equal(again.events[1].id,likes.events[0].id);
  assert.equal((await fetch(base+'/session/events?after=-1',{headers})).status,400);
  const other=await(await fetch(base+'/session/events?after=0',{headers:{...headers,'x-magnet-session':'b'.repeat(32)}})).json();assert.equal(other.status,'DISCONNECTED');
  await fetch(base+'/disconnect',{method:'POST',headers,body:'{}'});

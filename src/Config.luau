@@ -1,5 +1,6 @@
 return {
     Gifts = {
+        Likes = {Name = "กดใจ 50 ครั้ง", Coins = 0, Blocks = 10, Color = Color3.fromRGB(255, 88, 142)},
         Rose = {GiftId = 5655, Name = "กุหลาบ", Coins = 1, Blocks = 10, Color = Color3.fromRGB(255, 88, 142)},
         Roses = {GiftId = 8913, Name = "โรซ่า", Coins = 10, Blocks = 100, Color = Color3.fromRGB(177, 112, 255)},
         Perfume = {GiftId = 5658, Name = "น้ำหอม", Coins = 20, Freeze = 10, Color = Color3.fromRGB(73, 219, 255)},
