@@ -261,4 +261,3 @@ function ConstructiveSolidGeometry.subtract(
 	return result
 end
 return ConstructiveSolidGeometry
-

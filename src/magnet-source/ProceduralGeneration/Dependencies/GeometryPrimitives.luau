@@ -239,7 +239,7 @@ end
 
 --[[
 	EXTRUSION DIRECTION:
-	
+
 	By default, surfaces extrude evenly from their center (offset = 0).
 	If an `extrusionDir` (Vector3) is provided, the normal is flipped to match
 	this direction as closely as possible, and the part is offset so that the provided
@@ -386,14 +386,14 @@ end
 local function createTriangleWedge(wedgeName: string, apex: Vector3, foot: Vector3, baseVertex: Vector3, depth: number, alignOffset: Vector3, material: (string | Enum.Material)?, color: Color3?, transparency: number?): WedgePart?
 	local heightVec = apex - foot
 	local lengthVec = foot - baseVertex
-	
+
 	local height = heightVec.Magnitude
 	local length = lengthVec.Magnitude
-	
+
 	if height < 0.001 or length < 0.001 then
 		return nil  -- Skip degenerate wedge
 	end
-	
+
 	local yAxis = heightVec.Unit
 	local zAxis = lengthVec.Unit
 	local rawX = yAxis:Cross(zAxis)
@@ -401,11 +401,11 @@ local function createTriangleWedge(wedgeName: string, apex: Vector3, foot: Vecto
 		return nil -- height and length vectors nearly parallel; fall through to canvas path
 	end
 	local xAxis = rawX.Unit
-	
+
 	-- Center is midpoint of apex and baseVertex (center of sloped face)
 	-- Apply alignment offset
 	local center = (apex + baseVertex) / 2 + alignOffset
-	
+
 	local part = Instance.new("WedgePart")
 	part.Name = wedgeName
 	part.Size = Vector3.new(depth, height, length)
@@ -418,7 +418,7 @@ local function createTriangleWedge(wedgeName: string, apex: Vector3, foot: Vecto
 		part.Color = color
 	end
 	part.Transparency = transparency or 0
-	
+
 	return part
 end
 
@@ -788,24 +788,24 @@ function GeometryPrimitives.strutFromTwoPoints(name: string, startPoint: Vector3
 
 	local mid = (startPoint + endPoint) / 2
 	local zAxis = direction.Unit -- The Forward/Length axis
-	
+
 	-- AUTOMATIC ORIENTATION
 	-- Default to World Up (0,1,0).
 	local upRef = Vector3.new(0,1,0)
-	
+
 	-- If the beam is vertical (straight up/down), switch reference to World Z to prevent math errors.
 	if math.abs(zAxis:Dot(upRef)) > 0.95 then
 		upRef = Vector3.new(0,0,1)
 	end
-	
+
 	local xAxis = upRef:Cross(zAxis).Unit -- Right Axis
 	local yAxis = zAxis:Cross(xAxis).Unit -- Corrected Up Axis
-	
+
 	local part = Instance.new("Part")
 	part.Name = name
 	part.Size = Vector3.new(width, height, length)
 	part.CFrame = CFrame.fromMatrix(mid, xAxis, yAxis, zAxis)
-	
+
 	part.Color = color
 	setValidRobloxMaterial(part, material)
 	part.Transparency = transparency or 0
@@ -853,10 +853,10 @@ function GeometryPrimitives.axisAlignedBlockFromCorners(name: string, corner1: V
 	part.Anchored = true
 	part.Parent = resolveParentNoWorkspace(parent)
 
-	if color then 
-		part.Color = color 
+	if color then
+		part.Color = color
 	end
-	
+
 	setValidRobloxMaterial(part, material)
 
 	return part
@@ -2556,7 +2556,7 @@ function GeometryPrimitives.text(name: string, text: string, p1: Vector3, p2: Ve
 	local lenVec = p2 - p1
 	local widVec = p4 - p1
 	local areaWidth, areaHeight = lenVec.Magnitude, widVec.Magnitude
-	
+
 	if areaWidth < 0.001 or areaHeight < 0.001 then
 		error("text '" .. name .. "': area is too small")
 	end
@@ -2568,8 +2568,8 @@ function GeometryPrimitives.text(name: string, text: string, p1: Vector3, p2: Ve
 		error("text '" .. name .. "': text area is degenerate (p1-p2 and p1-p4 are nearly parallel)")
 	end
 	local naturalFrontNormal = rawFrontN.Unit
-	
-	-- If faceDir is provided and the text is facing away from it, 
+
+	-- If faceDir is provided and the text is facing away from it,
 	-- we flip the text so it faces outward properly.
 	local isFlipped = true
 	if typeof(faceDir) == "Vector3" and naturalFrontNormal:Dot(faceDir) < 0 then
@@ -2577,7 +2577,7 @@ function GeometryPrimitives.text(name: string, text: string, p1: Vector3, p2: Ve
 		naturalFrontNormal = -naturalFrontNormal
 		isFlipped = false
 	end
-	
+
 	local xAxis = rightDir
 	local yAxis = -downDir
 	local zAxis = -naturalFrontNormal
@@ -2869,7 +2869,7 @@ function GeometryPrimitives.text(name: string, text: string, p1: Vector3, p2: Ve
 		local basePixels = 100
 		gui.CanvasSize = Vector2.new(basePixels, basePixels * (areaHeight / areaWidth))
 		gui.Parent = part
-		
+
 		local label = Instance.new("TextLabel")
 		label.Name = "Label"
 		label.BackgroundTransparency = 1
@@ -2885,4 +2885,3 @@ function GeometryPrimitives.text(name: string, text: string, p1: Vector3, p2: Ve
 	end
 end
 return GeometryPrimitives
-

@@ -55,4 +55,3 @@ function SmartObject.getAttribute(instance: any, key: string, defaultValue: numb
 	end
 end
 return SmartObject
-
