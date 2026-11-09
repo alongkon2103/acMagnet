@@ -4,6 +4,12 @@ Editable Blender environment and the actual Roblox import for the cream/sage/cop
 
 The field is surrounded by a rounded porcelain/timber promenade, an arched glass gallery and horseshoe observatory, an asymmetric water garden, curved benches, copper coil workstations, layered planters and folded-leaf trees. Center-field geometry remains quiet so live profile blocks stay legible. Surrounding courts are decorative; existing player bounds remain the circular playing area.
 
+## Vivid Garden colorway
+
+The team's follow-up asked for brighter colors. Run `src/StudioConservatoryColorPass.luau` after the base installer: it changes the material palette directly, using fresh mint, richer emerald/leaf greens, turquoise water, warmer copper/timber and selective coral accents on pots/workshop cabinetry. A mild contrast/saturation grade supports the palette. It preserves geometry, transparency, materials, shadow flags and gameplay; all 69 parts were checked against the backup for identical sizes/transforms. Default arena scale remains 150%.
+
+The previous color/lighting state is saved in `ServerStorage.BeforeVividColor_20261109`. Preview: `roblox-vivid-overview.png`. This is a Studio-side colorway, so the original GLB/asset and Blender source retain the initial palette; run the color pass after a fresh insertion. The user's separately modified Blender file was left untouched.
+
 ## Files
 
 - `magnet-conservatory.blend`: editable source, with the original default collection hidden and a prepared overview camera.
