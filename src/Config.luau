@@ -14,8 +14,6 @@ return {
     ClearSeconds = 10,
     PlayerSpeed = 22,
     PullRadius = 9,
-    MinPullRadius = 4,
-    MaxPullRadius = 24,
     CaptureSoundId = "rbxassetid://132948338000932",
     CaptureSoundVolume = 0.14,
     CaptureSeconds = 0.6,

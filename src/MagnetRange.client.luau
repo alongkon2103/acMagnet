@@ -3,13 +3,12 @@ local RunService=game:GetService("RunService")
 local player=Players.LocalPlayer
 local kit=game.ReplicatedStorage:WaitForChild("BlackHole")
 local Config=require(kit.Config)
-local state=kit:WaitForChild("State")
 if player:GetAttribute("MagnetRingEnabled")==nil then player:SetAttribute("MagnetRingEnabled",false)end
 local parts,transforms={},{}
 local folder=Instance.new("Folder");folder.Name="LocalMagnetRange"
 local floor=workspace:WaitForChild("BlackHoleArena"):FindFirstChild("FloorTile")
 local floorY=(floor and floor.Position.Y+floor.Size.Y/2 or .2)+.04
-local radius=state:GetAttribute("PullRadius") or Config.PullRadius
+local radius=Config.PullRadius
 local opacity,lastOpacity=0,-1
 local segments=48
 local function build()
@@ -21,7 +20,7 @@ local function build()
     end
 end
 RunService.RenderStepped:Connect(function(dt)
-    local desired=player:GetAttribute("MagnetRadiusPreview") or state:GetAttribute("PullRadius") or Config.PullRadius
+    local desired=Config.PullRadius
     radius+=(desired-radius)*(1-math.exp(-14*dt))
     local show=player:GetAttribute("MagnetRingEnabled")==true
     opacity+=((show and 1 or 0)-opacity)*(1-math.exp(-16*dt))

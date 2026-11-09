@@ -151,10 +151,9 @@ RunService.Heartbeat:Connect(function(dt)
         spawnBudget -= 1
         if job.remaining == 0 then table.remove(queue, 1) end
     end
-    local pullRadius=state:GetAttribute("PullRadius") or Config.PullRadius
     for id, block in active do
         if not block.capture and now >= freezeUntil and clock-block.birth >= .5 then
-            local nearest, distance = nil, pullRadius
+            local nearest, distance = nil, Config.PullRadius
             for userId, position in holes do
                 local d = (position-block.position).Magnitude
                 if d < distance then nearest, distance = userId, d end
