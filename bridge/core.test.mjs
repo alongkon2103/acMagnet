@@ -1,12 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {normalizeGift, SessionQueue, username} from './core.mjs';
+import {normalizeGift, normalizeSender, SessionQueue, username} from './core.mjs';
 
 test('username accepts handle but rejects URLs',()=>{
  assert.equal(username(' @Some.one '),'some.one');
  assert.throws(()=>username('https://tiktok.com/@a'));
 });
 const gift={giftId:5655,giftType:1,repeatCount:12,repeatEnd:false,msgId:'900719925474099399',user:{uniqueId:'viewer',profilePicture:{urls:['https://p16.tiktokcdn.com/a.jpg']}}};
+test('real v3 users with only avatarThumb retain their profile URL',()=>{
+ const p=normalizeSender({displayId:'viewer',avatarLarge:undefined,avatarMedium:undefined,avatarThumb:{urlList:['https://p16-common-sign.tiktokcdn-eu.com/avatar.webp']}});
+ assert.equal(p.avatarUrl,'https://p16-common-sign.tiktokcdn-eu.com/avatar.webp');
+});
 test('streak counted only once at final update, preserving unit gift',()=>{
  assert.equal(normalizeGift(gift,{'5655':'Rose'}),null);
  const e=normalizeGift({...gift,repeatEnd:true},{'5655':'Rose'});

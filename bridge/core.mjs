@@ -19,7 +19,7 @@ export function normalizeSender(u) {
  const handle=u.displayId||u.uniqueId;
  if(typeof handle!=='string'||!handle.length||handle.length>80)return null;
  let seed=0;for(const c of handle)seed=(Math.imul(seed,31)+c.charCodeAt(0))>>>0;
- return {sender:{handle,name:'@'+handle,seed:seed%2147483647},avatarUrl:u.avatarLarge?.urlList?.[0]??u.avatarMedium?.urlList?.[0]??u.profilePicture?.urls?.[0]??u.profilePictureUrl};
+ return {sender:{handle,name:'@'+handle,seed:seed%2147483647},avatarUrl:u.avatarLarge?.urlList?.[0]??u.avatarMedium?.urlList?.[0]??u.avatarThumb?.urlList?.[0]??u.profilePicture?.urls?.[0]??u.profilePictureUrl};
 }
 export class SessionQueue {
  constructor(limit=2000){this.limit=limit;this.events=[];this.seq=0;this.seen=new Map();this.dropped=0;}

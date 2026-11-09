@@ -1,7 +1,7 @@
 import sharp from 'sharp';
 export async function pixelsFromBuffer(input){
- const {data}=await sharp(input,{limitInputPixels:16000000}).rotate().resize(16,16,{fit:'cover'}).flatten({background:'#ffffff'}).removeAlpha().toColourspace('srgb').raw().toBuffer({resolveWithObject:true});
- return Array.from({length:256},(_,i)=>data[i*3]*65536+data[i*3+1]*256+data[i*3+2]);
+ const {data}=await sharp(input,{limitInputPixels:16000000}).rotate().resize(32,32,{fit:'cover'}).flatten({background:'#ffffff'}).removeAlpha().toColourspace('srgb').raw().toBuffer({resolveWithObject:true});
+ return Array.from({length:1024},(_,i)=>data[i*3]*65536+data[i*3+1]*256+data[i*3+2]);
 }
 export function allowedAvatarUrl(value){try{const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password&&(!u.port||u.port==='443')&&['tiktokcdn.com','tiktokcdn-us.com','tiktokcdn-eu.com','byteoversea.com','ibytedtos.com','muscdn.com'].some(h=>u.hostname===h||u.hostname.endsWith('.'+h));}catch{return false;}}
 const cache=new Map();

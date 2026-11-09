@@ -33,7 +33,7 @@ local function disconnect()
 end
 local function portrait(sender)
     local pixels=sender.pixels
-    if type(pixels)~="table" or #pixels~=256 then return nil end
+    if type(pixels)~="table" or (#pixels~=256 and #pixels~=1024) then return nil end
     for _,v in pixels do if type(v)~="number" or v~=v or v%1~=0 or v<0 or v>16777215 then return nil end end
     -- Content-derived ID means all gifts from this profile share one image.
     local encoded=Http:JSONEncode(pixels)

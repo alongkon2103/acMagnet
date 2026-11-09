@@ -11,12 +11,13 @@ local function get(id)
     local value=registry:FindFirstChild(id)
     if not value then return nil end
     local ok,pixels=pcall(Http.JSONDecode,Http,value.Value)
-    if not ok or #pixels~=256 then return nil end
-    local entry={pixels=pixels}
+    if not ok or (#pixels~=256 and #pixels~=1024) then return nil end
+    local size=math.sqrt(#pixels)
+    local entry={pixels=pixels,size=size}
     local success,image=pcall(function()
-        local editable=AssetService:CreateEditableImage({Size=Vector2.new(16,16)})
+        local editable=AssetService:CreateEditableImage({Size=Vector2.new(size,size)})
         if not editable then return nil end
-        local bytes=buffer.create(1024)
+        local bytes=buffer.create(#pixels*4)
         for i,v in pixels do
             local offset=(i-1)*4
             buffer.writeu8(bytes,offset,math.floor(v/65536))
@@ -24,7 +25,7 @@ local function get(id)
             buffer.writeu8(bytes,offset+2,v%256)
             buffer.writeu8(bytes,offset+3,255)
         end
-        editable:WritePixelsBuffer(Vector2.zero,Vector2.new(16,16),bytes)
+        editable:WritePixelsBuffer(Vector2.zero,Vector2.new(size,size),bytes)
         return editable
     end)
     if success then entry.image=image end
@@ -46,7 +47,7 @@ function module.Apply(part,id)
     local entry=get(id)
     if not entry then return false end
     -- Retain the original portrait unless this renderer can create a replacement.
-    if not entry.image and fallbackCount>=64 then return false end
+    if not entry.image and fallbackCount>=16 then return false end
     local gui=Instance.new("SurfaceGui")
     gui.Name="SenderPortrait";gui.Face=Enum.NormalId.Top;gui.CanvasSize=Vector2.new(160,160)
     gui.LightInfluence=0;gui.MaxDistance=100;gui.SizingMode=Enum.SurfaceGuiSizingMode.FixedSize
@@ -57,15 +58,16 @@ function module.Apply(part,id)
         label.ImageContent=Content.fromObject(entry.image);label.Parent=gui
     else
         fallbackCount+=1;gui:SetAttribute("PixelFallback",true)
-        -- Run-length rectangles reduce instances for flat regions of a 16x16 portrait.
-        for y=0,15 do
+        -- Run-length rectangles reduce instances for flat regions of the portrait.
+        local size=entry.size
+        for y=0,size-1 do
             local x=0
-            while x<16 do
-                local v=entry.pixels[y*16+x+1]
+            while x<size do
+                local v=entry.pixels[y*size+x+1]
                 local finish=x+1
-                while finish<16 and entry.pixels[y*16+finish+1]==v do finish+=1 end
+                while finish<size and entry.pixels[y*size+finish+1]==v do finish+=1 end
                 local frame=Instance.new("Frame");frame.BorderSizePixel=0;frame.BackgroundColor3=color(v)
-                frame.Position=UDim2.fromScale(x/16,y/16);frame.Size=UDim2.fromScale((finish-x)/16,1/16);frame.Parent=gui
+                frame.Position=UDim2.fromScale(x/size,y/size);frame.Size=UDim2.fromScale((finish-x)/size,1/size);frame.Parent=gui
                 x=finish
             end
         end
