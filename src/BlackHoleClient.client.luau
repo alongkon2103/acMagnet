@@ -7,10 +7,10 @@ local kit = RS:WaitForChild("BlackHole")
 local Config = require(kit:WaitForChild("Config"))
 local state = kit:WaitForChild("State")
 local camera = workspace.CurrentCamera
-local dark = Color3.fromRGB(13, 16, 35)
-local white = Color3.fromRGB(240, 242, 255)
-local cyan = Color3.fromRGB(78, 231, 255)
-local purple = Color3.fromRGB(167, 95, 255)
+local dark = Color3.fromRGB(242, 237, 225)
+local white = Color3.fromRGB(54, 62, 51)
+local cyan = Color3.fromRGB(69, 106, 87)
+local purple = Color3.fromRGB(145, 96, 61)
 local function make(class, props, parent)
     local obj = Instance.new(class)
     for k,v in props do obj[k] = v end
@@ -22,22 +22,22 @@ local function round(obj, radius)
 end
 local function text(parent, str, size, pos, bounds, color)
     return make("TextLabel", {BackgroundTransparency=1,Text=str,TextSize=size,
-        Font=Enum.Font.GothamBold,TextColor3=color or white,Position=pos,Size=bounds,
+        Font=Enum.Font.GothamMedium,TextColor3=color or white,Position=pos,Size=bounds,
         TextWrapped=true}, parent)
 end
 local gui = make("ScreenGui", {Name="BlackHoleHUD",ResetOnSpawn=false,IgnoreGuiInset=true}, player:WaitForChild("PlayerGui"))
 local root = make("Frame", {BackgroundTransparency=1,Size=UDim2.fromScale(1,1)}, gui)
-local title = text(root,"MAGNET LAB",32,UDim2.new(.5,-210,0,48),UDim2.fromOffset(420,42))
+local title = text(root,"MAGNET LAB",26,UDim2.new(.5,-210,0,48),UDim2.fromOffset(420,42))
 local subtitle = text(root,"แม่เหล็กไฟฟ้า • WASD / ลูกศร เพื่อเก็บบล็อก",15,UDim2.new(.5,-220,0,92),UDim2.fromOffset(440,24),cyan)
-local score = make("Frame",{BackgroundColor3=dark,BackgroundTransparency=.12,Position=UDim2.new(.5,-200,0,126),Size=UDim2.fromOffset(400,68)},root)
+local score = make("Frame",{BackgroundColor3=dark,BackgroundTransparency=.02,Position=UDim2.new(.5,-200,0,126),Size=UDim2.fromOffset(400,68)},root)
 round(score,16)
 make("UIStroke",{Color=purple,Transparency=.4,Thickness=1},score)
 local activeText = text(score,"0 บล็อก",25,UDim2.fromOffset(4,5),UDim2.fromOffset(230,32))
 local pendingText = text(score,"คิว 0",12,UDim2.fromOffset(4,38),UDim2.fromOffset(230,20),cyan)
-local winText = text(score,"WIN 0",24,UDim2.fromOffset(235,6),UDim2.fromOffset(160,50),Color3.fromRGB(255,214,112))
+local winText = text(score,"WIN 0",24,UDim2.fromOffset(235,6),UDim2.fromOffset(160,50),Color3.fromRGB(131,86,48))
 local status = text(root,"กำลังดูดบล็อก",21,UDim2.new(.5,-230,0,204),UDim2.fromOffset(460,34),cyan)
-local toast = text(root,"",20,UDim2.new(.5,-270,1,-233),UDim2.fromOffset(540,45))
-local panel = make("Frame",{BackgroundColor3=dark,BackgroundTransparency=.07,AnchorPoint=Vector2.new(.5,1),Position=UDim2.new(.5,0,1,-24),Size=UDim2.fromOffset(660,164)},root)
+local toast = text(root,"",17,UDim2.new(.5,-270,1,-233),UDim2.fromOffset(540,45))
+local panel = make("Frame",{BackgroundColor3=dark,BackgroundTransparency=.02,AnchorPoint=Vector2.new(.5,1),Position=UDim2.new(.5,0,1,-24),Size=UDim2.fromOffset(660,164)},root)
 round(panel,18)
 local testLabel = text(panel,"รายการของขวัญ",13,UDim2.fromOffset(0,5),UDim2.new(1,0,0,24),cyan)
 local buttons = {}
@@ -45,14 +45,14 @@ local canTest = false
 local function sendGift(id) if canTest then kit.TestGift:FireServer(id) end end
 for i,id in Config.Order do
     local gift = Config.Gifts[id]
-    local b = make("TextButton",{Text="",AutoButtonColor=true,BackgroundColor3=Color3.fromRGB(28,31,57),
+    local b = make("TextButton",{Text="",AutoButtonColor=true,BackgroundColor3=Color3.fromRGB(231,228,217),
         Position=UDim2.fromOffset(12+(i-1)*162,35),Size=UDim2.fromOffset(150,116)},panel)
     round(b,12)
-    make("UIStroke",{Color=gift.Color,Thickness=1,Transparency=.2},b)
+    make("UIStroke",{Color=dark,Thickness=1,Transparency=.75},b)
     text(b,tostring(i),12,UDim2.fromOffset(7,5),UDim2.fromOffset(18,18),gift.Color)
-    text(b,gift.Name,19,UDim2.fromOffset(0,15),UDim2.new(1,0,0,30),gift.Color)
+    text(b,gift.Name,17,UDim2.fromOffset(0,15),UDim2.new(1,0,0,30),white)
     text(b,gift.Blocks and "+"..gift.Blocks.." บล็อก" or "แช่แข็ง 10 วิ",16,UDim2.fromOffset(0,49),UDim2.new(1,0,0,27))
-    text(b,gift.Coins.." เหรียญ",14,UDim2.fromOffset(0,82),UDim2.new(1,0,0,22),Color3.fromRGB(171,177,205))
+    text(b,gift.Coins.." เหรียญ",14,UDim2.fromOffset(0,82),UDim2.new(1,0,0,22),Color3.fromRGB(95,105,90))
     b.Activated:Connect(function() sendGift(id) end)
     buttons[id] = b
 end
@@ -74,6 +74,8 @@ UIS.InputBegan:Connect(function(input, processed)
 end)
 local visuals = make("Folder",{Name="LocalGiftBlocks"},workspace)
 local PixelPortrait=require(kit:WaitForChild("PixelPortrait"))
+local Motion=require(kit:WaitForChild("BlockMotion"))
+local roundedTemplate=kit:WaitForChild("RoundedBlock")
 local blocks = {}
 local animated = {}
 local moveParts,moveCFrames = {},{}
@@ -117,6 +119,7 @@ local function portrait(part,seed)
     shape(surf,.60,.40,.08,.1,dark,true)
     shape(surf,.40,.60,.20,.065,Color3.fromRGB(165,66,78),true)
     shape(surf,.18,.77,.64,.23,white,true)
+    for _,face in {Enum.NormalId.Bottom,Enum.NormalId.Front,Enum.NormalId.Back,Enum.NormalId.Left,Enum.NormalId.Right} do local side=surf:Clone();side.Face=face;side.Parent=part end
 end
 local function add(data)
     if blocks[data.id] or removed[data.id] then return end
@@ -126,7 +129,7 @@ local function add(data)
         pendingCaptures[data.id]=nil
     end
     local templateId=tostring(math.floor(math.abs(data.sender.seed))%16+1)
-    local template=portraitTemplates and portraitTemplates:FindFirstChild(templateId)
+    local template=roundedTemplate
     local p
     if template then
         local pool=blockPool[templateId]
@@ -142,14 +145,20 @@ local function add(data)
             Material=Enum.Material.SmoothPlastic,Color=color,CastShadow=false},visuals)
         portrait(p,data.sender.seed)
     end
-    PixelPortrait.Apply(p,data.sender.avatarId)
-    p.CFrame=CFrame.new(data.position.X,6.1,data.position.Z)*CFrame.Angles(0,data.angle,0)
+    local tones={Color3.fromRGB(207,217,191),Color3.fromRGB(226,197,163),Color3.fromRGB(188,209,203),Color3.fromRGB(229,215,189)}
+    p.Color=tones[math.floor(math.abs(data.sender.seed))%#tones+1]
+    if not PixelPortrait.Apply(p,data.sender.avatarId) and not PixelPortrait.ApplyFallback(p,data.sender.seed) then
+        for _,c in p:GetChildren() do if c:IsA("SurfaceGui") then c:Destroy() end end
+        portrait(p,data.sender.seed)
+    end
+    local offset,rotation=Motion.Rest(math.max(0,(state:GetAttribute("Clock") or 0)-data.birth),data.angle,data.sender.seed)
+    p.CFrame=CFrame.new(data.position+Vector3.new(0,1.1,0)+offset)*rotation
     p.LocalTransparencyModifier=0
     data.part=p
     data.baseSize=p.Size
     blocks[data.id]=data
     local sim=state:GetAttribute("Clock") or 0
-    if data.capture or sim-data.birth<.5 then
+    if data.capture or sim-data.birth<.9 then
         animated[data.id]=data
     else
         p.CFrame=CFrame.new(data.position.X,1.1,data.position.Z)*CFrame.Angles(0,data.angle,0)
@@ -191,7 +200,7 @@ local function received(action,payload)
     elseif action=="Gift" then
         local gift=Config.Gifts[payload.id]
         announce(payload.sender.name.." • "..gift.Name.." ×"..payload.quantity,gift.Color)
-    elseif action=="Win" then announce("ลานสะอาด!  WIN "..payload,Color3.fromRGB(255,214,112)) end
+    elseif action=="Win" then announce("ลานสะอาด!  WIN "..payload,Color3.fromRGB(131,86,48)) end
 end
 kit.Event.OnClientEvent:Connect(received)
 local initial = kit.Snapshot:InvokeServer()
@@ -228,32 +237,33 @@ RunService.RenderStepped:Connect(function(dt)
     -- Settled blocks require no per-frame iteration or transform writes.
     table.clear(moveParts)
     table.clear(moveCFrames)
+    if not frozen then
     for id,b in animated do
             local age=math.max(0,sim-b.birth)
             local position=b.position
-            local y=1.1+math.max(0,1-age*2)*5
-            local angle=b.angle
+            local offset,rotation,settled=Motion.Rest(age,b.angle,b.sender.seed)
+            local pose=CFrame.new(position+Vector3.new(0,1.1,0)+offset)*rotation
             if b.capture then
                 local t=math.clamp((sim-b.capture)/Config.CaptureSeconds,0,1)
                 local target,muzzle=magnetTarget(b.owner,b.target)
-                local from=b.position+Vector3.new(0,1.1,0)
-                local point=from:Lerp(target,t*t)+Vector3.new(0,math.sin(t*math.pi)*1.8,0)
-                position=point
-                y=point.Y
-                angle+=t*4
-                b.part.LocalTransparencyModifier=math.clamp((t-.8)*5,0,1)
+                local shrink,fade
+                pose,shrink,fade=Motion.Capture(b.position,target,math.max(0,b.capture-b.birth),t,b.angle,b.sender.seed)
+                b.part.Size=b.baseSize*shrink
+                b.part.LocalTransparencyModifier=fade
                 if not b.beam and muzzle and beamCount<18 then
                     b.pullAttachment=make("Attachment",{},b.part)
                     b.beam=make("Beam",{Attachment0=b.pullAttachment,Attachment1=muzzle,FaceCamera=true,
-                        Width0=.06,Width1=.12,Segments=5,LightEmission=1,
-                        Color=ColorSequence.new(cyan),Transparency=NumberSequence.new(.35)},b.part)
+                        Width0=.025,Width1=.07,Segments=5,LightEmission=1,
+                        Color=ColorSequence.new(Color3.fromRGB(196,155,93)),Transparency=NumberSequence.new(.35)},b.part)
                     beamCount+=1
                 end
             end
             table.insert(moveParts,b.part)
-            table.insert(moveCFrames,CFrame.new(position.X,y,position.Z)*CFrame.Angles(0,angle,0))
-            if not b.capture and age>=.5 then animated[id]=nil end
+            table.insert(moveCFrames,pose)
+            if not b.capture and settled then animated[id]=nil end
     end
+    end
+    PixelPortrait.UpdateVisibility(camera.CFrame.Position)
     if #moveParts>0 then workspace:BulkMoveTo(moveParts,moveCFrames,Enum.BulkMoveMode.FireCFrameChanged) end
     hudAccumulator+=dt
     if hudAccumulator>=.1 then

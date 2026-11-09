@@ -5,6 +5,7 @@ local images={}
 local module={}
 local fallbackCount=0
 local desired=setmetatable({},{__mode="k"})
+local visibilityCursor=nil
 local function color(v) return Color3.fromRGB(math.floor(v/65536),math.floor(v/256)%256,v%256) end
 local function get(id)
     if images[id] then return images[id] end
@@ -33,6 +34,7 @@ local function get(id)
     return entry
 end
 function module.Clear(part)
+    if visibilityCursor==part then visibilityCursor=nil end
     desired[part]=nil
     local old=part:FindFirstChild("SenderPortrait")
     if old then
@@ -47,17 +49,17 @@ function module.Apply(part,id)
     local entry=get(id)
     if not entry then return false end
     -- Retain the original portrait unless this renderer can create a replacement.
-    if not entry.image and fallbackCount>=16 then return false end
-    local gui=Instance.new("SurfaceGui")
-    gui.Name="SenderPortrait";gui.Face=Enum.NormalId.Top;gui.CanvasSize=Vector2.new(160,160)
-    gui.LightInfluence=0;gui.MaxDistance=100;gui.SizingMode=Enum.SurfaceGuiSizingMode.FixedSize
+    if not entry.image and fallbackCount>=4 then return false end
+    local folder=Instance.new("Folder");folder.Name="SenderPortrait"
+    local content=Instance.new(entry.image and "ImageLabel" or "Frame");content.BackgroundTransparency=1
+    content.Size=UDim2.fromScale(.8,.8);content.Position=UDim2.fromScale(.1,.1)
+    content.ClipsDescendants=true
+    local corner=Instance.new("UICorner");corner.CornerRadius=UDim.new(.10,0);corner.Parent=content
     if entry.image then
-        local label=Instance.new("ImageLabel")
-        label.BackgroundTransparency=1;label.Size=UDim2.fromScale(1,1)
-        label.ResampleMode=Enum.ResamplerMode.Pixelated
-        label.ImageContent=Content.fromObject(entry.image);label.Parent=gui
+        content.ResampleMode=Enum.ResamplerMode.Pixelated
+        content.ImageContent=Content.fromObject(entry.image)
     else
-        fallbackCount+=1;gui:SetAttribute("PixelFallback",true)
+        fallbackCount+=1;folder:SetAttribute("PixelFallback",true)
         -- Run-length rectangles reduce instances for flat regions of the portrait.
         local size=entry.size
         for y=0,size-1 do
@@ -67,18 +69,64 @@ function module.Apply(part,id)
                 local finish=x+1
                 while finish<size and entry.pixels[y*size+finish+1]==v do finish+=1 end
                 local frame=Instance.new("Frame");frame.BorderSizePixel=0;frame.BackgroundColor3=color(v)
-                frame.Position=UDim2.fromScale(x/size,y/size);frame.Size=UDim2.fromScale((finish-x)/size,1/size);frame.Parent=gui
+                frame.Position=UDim2.fromScale(x/size,y/size);frame.Size=UDim2.fromScale((finish-x)/size,1/size);frame.Parent=content
                 x=finish
             end
         end
     end
     for _,c in part:GetChildren() do if c:IsA("SurfaceGui") then c:Destroy() end end
-    gui.Parent=part
+    for _,face in {Enum.NormalId.Top,Enum.NormalId.Bottom,Enum.NormalId.Front,Enum.NormalId.Back,Enum.NormalId.Left,Enum.NormalId.Right} do
+        local gui=Instance.new("SurfaceGui");gui.Name=face.Name;gui.Face=face
+        gui.Adornee=part;gui.CanvasSize=Vector2.new(64,64);gui.LightInfluence=.2;gui.MaxDistance=65
+        gui.SizingMode=Enum.SurfaceGuiSizingMode.FixedSize
+        content:Clone().Parent=gui;gui.Parent=folder
+    end
+    content:Destroy();folder.Parent=part
     return true
+end
+local normals={Top=Vector3.new(0,1,0),Bottom=Vector3.new(0,-1,0),Front=Vector3.new(0,0,-1),Back=Vector3.new(0,0,1),Left=Vector3.new(-1,0,0),Right=Vector3.new(1,0,0)}
+function module.UpdateVisibility(cameraPosition)
+    -- Spread visibility checks over frames; never render the three hidden faces.
+    for _=1,160 do
+        local part=next(desired,visibilityCursor)
+        visibilityCursor=part
+        if not part then return end
+        if part.Parent then
+            local folder=part:FindFirstChild("SenderPortrait")
+            if folder then
+                local view=part.CFrame:PointToObjectSpace(cameraPosition)
+                for _,gui in folder:GetChildren() do
+                    local enabled=view:Dot(normals[gui.Name])>0
+                    if gui.Enabled~=enabled then gui.Enabled=enabled end
+                end
+            end
+        end
+    end
 end
 registry.ChildAdded:Connect(function(value)
     for part,id in desired do
         if id==value.Name and part.Parent then module.Apply(part,id) end
     end
 end)
+function module.ApplyFallback(part,seed)
+    local requested=desired[part]
+    local id="fallback_"..tostring(math.floor(math.abs(seed))%16)
+    if not registry:FindFirstChild(id) then
+        local pixels={}
+        for y=0,15 do for x=0,15 do
+            local v=14802388 -- warm paper
+            if x>=3 and x<=12 and y>=2 and y<=12 then v=15058089 end
+            if x>=3 and x<=12 and y>=2 and y<=4 then v=6442819 end
+            if y>=7 and y<=8 and (x==5 or x==10)then v=4016440 end
+            if y==10 and x>=6 and x<=9 then v=10453355 end
+            if y>=13 and x>=2 and x<=13 then v=7974515 end
+            table.insert(pixels,v)
+        end end
+        local value=Instance.new("StringValue");value.Name=id;value.Value=Http:JSONEncode(pixels);value.Parent=registry
+    end
+    local applied=module.Apply(part,id)
+    -- A late-replicating live profile must still replace the temporary print.
+    if requested and not requested:match("^fallback_") then desired[part]=requested end
+    return applied
+end
 return module
