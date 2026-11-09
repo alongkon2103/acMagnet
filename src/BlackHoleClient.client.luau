@@ -107,7 +107,7 @@ local function portrait(part,seed)
     local skin = ({Color3.fromRGB(255,211,169),Color3.fromRGB(202,140,97),Color3.fromRGB(139,86,62)})[rng:NextInteger(1,3)]
     local hair = Color3.fromHSV(rng:NextNumber(),.4,.22)
     local shirt = Color3.fromHSV(rng:NextNumber(),.65,.95)
-    local surf = make("SurfaceGui",{Face=Enum.NormalId.Top,CanvasSize=Vector2.new(96,96),LightInfluence=0,MaxDistance=90,SizingMode=Enum.SurfaceGuiSizingMode.FixedSize},part)
+    local surf = make("SurfaceGui",{Face=Enum.NormalId.Top,CanvasSize=Vector2.new(96,96),LightInfluence=0,MaxDistance=0,SizingMode=Enum.SurfaceGuiSizingMode.FixedSize},part)
     shape(surf,0,0,1,1,shirt,false)
     shape(surf,.18,.07,.64,.69,hair,true)
     shape(surf,.24,.22,.52,.53,skin,true)

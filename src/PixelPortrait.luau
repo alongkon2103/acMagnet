@@ -77,7 +77,8 @@ function module.Apply(part,id)
     for _,c in part:GetChildren() do if c:IsA("SurfaceGui") then c:Destroy() end end
     for _,face in {Enum.NormalId.Top,Enum.NormalId.Bottom,Enum.NormalId.Front,Enum.NormalId.Back,Enum.NormalId.Left,Enum.NormalId.Right} do
         local gui=Instance.new("SurfaceGui");gui.Name=face.Name;gui.Face=face
-        gui.Adornee=part;gui.CanvasSize=Vector2.new(64,64);gui.LightInfluence=.2;gui.MaxDistance=65
+        -- Keep the print visible at every supported camera zoom; hidden faces are still culled below.
+        gui.Adornee=part;gui.CanvasSize=Vector2.new(64,64);gui.LightInfluence=.2;gui.MaxDistance=0
         gui.SizingMode=Enum.SurfaceGuiSizingMode.FixedSize
         content:Clone().Parent=gui;gui.Parent=folder
     end
