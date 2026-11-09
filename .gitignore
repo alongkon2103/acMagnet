@@ -3,3 +3,5 @@ node_modules/
 *.log
 runtime/
 src/LiveConfig.local.luau
+__pycache__/
+*.blend1
