@@ -58,18 +58,25 @@ The installed connector is `tiktok-live-connector@2.5.0`. **Extended gift-catalo
 
 ### Gift mapping
 
-Defaults come from `data/game-gifts.json`, a four-record subset of the owner's supplied `tiktok_gifts.json`. `GIFT_IDS` in .env is an optional override. Both local and VPS initial one-gift overrides were removed to activate the database mappings. Unknown gifts do not create blocks. The authenticated `GET /session/gifts` endpoint lists gift IDs/names observed during that session without fetching the premium extended catalog; polling includes an unmapped counter. Never infer a tier from total coins: 100 roses remain 100 Rose gifts.
+Defaults come from `data/game-gifts.json`, a five-record subset of the owner's supplied `tiktok_gifts.json`, matched to the current Studio gift menu. `GIFT_IDS` in .env is an optional override. Unknown gifts do not create blocks. The authenticated `GET /session/gifts` endpoint lists gift IDs/names observed during that session without fetching the premium extended catalog; polling includes an unmapped counter. Never infer a tier from total coins: 100 roses remain 100 Rose gifts.
 
 | Database name | Gift ID | Coins | Game action |
 | --- | --- | --- | --- |
 | Rose | 5655 | 1 | Rose: +10 blocks |
 | Rosa | 8913 | 10 | Roses: +100 blocks |
-| Perfume | 5658 | 20 | Perfume: freeze 10s |
+| Friendship Necklace | 9947 | 10 | Friendship: freeze 5s |
+| Doughnut | 5879 | 30 | Donut: arena +10 percentage points |
 | Mishka Bear | 5566 | 100 | Bear: +1000 blocks |
 
 Mishka Bear was chosen for the existing “อุ้มใจหมี” slot based on its bear name and 100-coin price; other 100-coin gifts such as Hand Heart are not treated as Bear. This mapping follows the owner's database snapshot; future TikTok regional catalogs may change.
 
-Current game rules: Rose +10 blocks, Roses +100, Perfume freezes 10s per unit, Bear +1000. Streak gifts are accepted at repeatEnd and use repeatCount. Large quantities are split according to queue capacity and retried with stable chunk IDs.
+Current game rules: Rose +10 blocks, Roses +100, Friendship freezes 5s per unit, Donut expands the arena by 10 percentage points per unit (cap 800%), Bear +1000. Streaks with a valid nonzero string `groupId` grant cumulative-count deltas immediately; duplicate, reordered and final packets do not grant again. Without a safe group ID, counting remains final-only. Large quantities are split according to queue capacity and retried with stable chunk IDs.
+
+Delivery fix (2026-11-13): enqueue gameplay receipts immediately, without waiting up to 5s for profile downloads. Send a separate `kind: Portrait` receipt when the 32×32 image is ready; this registers the preassigned portrait ID without invoking SubmitGift again. Already spawned blocks retain that ID and the existing PixelPortrait ChildAdded listener replaces their temporary face. Cached portraits ride on subsequent gift receipts. Successful Studio polling now waits 0.2s (0.03s with queued batches), retaining failure backoff. The existing bear cinematic no longer holds the spawn queue for 2.3s; its visual sequence remains intact. At 100 blocks/sec, a 1000-block gift still fills gradually and respects active/queue capacity.
+
+For the current Studio game, run `src/StudioLiveLatencyFix.luau` in Edit mode, then restart Play. It backs up the four modified scripts/modules in ServerStorage and patches the current source narrowly, preserving newer UI, powers, follow safeguards and cinematic logic that differ from the older repository snapshots. Deploy the paired backend update and reconnect LIVE after restarting Node. The new bridge sends `protocol: 2` when connecting to opt into asynchronous portraits; older bridges retain inline portraits and never receive unsupported Portrait receipts.
+
+Verification (2026-11-13): 21 Node tests passed locally and on the VPS; Studio process/gateway QA verified 5-second freeze, +10 percentage points, replay suppression and 1024-pixel registration. A late image replaced the temporary print on all six faces of an already spawned block. Bear's first Add reached the client in 0.053–0.070s in local Studio tests; this is not TikTok-to-game latency. Authenticated HTTPS and the normal game connection succeeded; `min44607` reported OFFLINE, so a new paid LIVE receipt was not tested. Reproducible server assertions: `tests/studio/live-gifts-qa.luau`.
 
 Likes: every 50 likes from the same sender creates 10 blocks with that sender's pixel profile, using action `Likes`. Counts use the raw connector packet's `count`, never the stream-wide `total`. Remainders carry over (120 likes = 20 blocks and 20 likes remaining). Duplicate message IDs are ignored. Progress survives automatic socket retries within a session and resets on a new Connect session. Up to 10,000 recent senders and 100,000 like receipt IDs are retained per session. TikTok may omit like packets on busy streams; only received packets can be counted. Studio gateway verification confirmed exactly +10 blocks and duplicate suppression; the UI displays the rule.
 
@@ -77,7 +84,7 @@ Likes: every 50 likes from the same sender creates 10 blocks with that sender's 
 
 Studio users can control connections. In published places, personal-place creator, private-server owner, and IDs explicitly listed in **LiveConfig.OperatorUserIds** can connect. For group-owned public places populate this server-only operator list. Gift-test permissions remain controlled by the existing game Config.
 
-Each Roblox server has a random session token. Backend endpoints require both `X-Magnet-Key` and `X-Magnet-Session`. Session queue is in RAM, retains 2000 events, and reports cursor gaps/dropped events; deduplication has a one-hour retention. Sessions expire 120s after polling stops. Up to 8 sessions per local bridge. Reconnect uses bounded exponential backoff. Gifts awaiting images are drained before end-of-stream terminal status. Restarting Node loses sessions and queues; reconnect in-game.
+Each Roblox server has a random session token. Backend endpoints require both `X-Magnet-Key` and `X-Magnet-Session`. Session queue is in RAM, retains 2000 events, and reports cursor gaps/dropped events; deduplication has a one-hour retention. Sessions expire 120s after polling stops. Up to 8 sessions per local bridge. Reconnect uses bounded exponential backoff. Gifts are available immediately; late portraits drain before end-of-stream terminal status. Restarting Node loses sessions and queues; reconnect in-game.
 
 ## Portrait limits
 

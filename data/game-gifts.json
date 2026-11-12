@@ -30,19 +30,36 @@
     ]
   },
   {
-    "id": 5658,
-    "key": "Perfume",
-    "name": "Perfume",
-    "coins": 20,
+    "id": 9947,
+    "name": "Friendship Necklace",
+    "coins": 10,
+    "image": "https://p16-webcast.tiktokcdn.com/img/maliva/webcast-va/resource/e033c3f28632e233bebac1668ff66a2f.png~tplv-obj.webp",
     "type": 1,
-    "image": "https://p16-webcast.tiktokcdn.com/img/maliva/webcast-va/20b8f61246c7b6032777bb81bf4ee055~tplv-obj.webp",
-    "aliases": [
-      "น้ำหอม"
-    ],
+    "source": 1,
     "regions": [
       "TH",
       "US"
-    ]
+    ],
+    "aliases": [
+      "สร้อยคอมิตรภาพ"
+    ],
+    "key": "Friendship"
+  },
+  {
+    "id": 5879,
+    "name": "Doughnut",
+    "coins": 30,
+    "image": "https://p16-webcast.tiktokcdn.com/img/maliva/webcast-va/4e7ad6bdf0a1d860c538f38026d4e812~tplv-obj.webp",
+    "type": 1,
+    "source": 1,
+    "regions": [
+      "TH",
+      "US"
+    ],
+    "aliases": [
+      "โดนัท"
+    ],
+    "key": "Donut"
   },
   {
     "id": 5566,

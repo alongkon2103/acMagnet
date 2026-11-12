@@ -3,5 +3,5 @@ return {
     BridgeUrl = "",
     BridgeKey = "",
     OperatorUserIds = {},
-    PollSeconds = 1,
+    PollSeconds = 0.2,
 }

@@ -7,7 +7,7 @@ const request=async(method,path,body)=>{const r=await fetch(base+path,{method,he
 try{
  const health=await(await fetch(base+'/health')).json();
  const unauthorized=(await fetch(base+'/session/events?after=0')).status;
- const start=await request('POST','/connect',{username:channel});
+ const start=await request('POST','/connect',{username:channel,protocol:2});
  let state=start;
  for(let i=0;i<12;i++){
   await new Promise(r=>setTimeout(r,1000));state=await request('GET','/session/events?after=0');

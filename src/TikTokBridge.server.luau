@@ -32,14 +32,16 @@ local function disconnect()
     if previous then task.spawn(function() pcall(request,"POST","/disconnect",{},previous) end) end
 end
 local function portrait(sender)
+    local requested=sender.portraitId
+    if type(requested)~="string" or #requested~=33 or not requested:match("^p%x+$") then requested=nil end
     local pixels=sender.pixels
-    if type(pixels)~="table" or (#pixels~=256 and #pixels~=1024) then return nil end
+    if type(pixels)~="table" or (#pixels~=256 and #pixels~=1024) then return requested end
     for _,v in pixels do if type(v)~="number" or v~=v or v%1~=0 or v<0 or v>16777215 then return nil end end
     -- Content-derived ID means all gifts from this profile share one image.
     local encoded=Http:JSONEncode(pixels)
     local hash=0
     for i=1,#encoded do hash=(hash*31+string.byte(encoded,i))%2147483647 end
-    local id="p"..hash
+    local id=requested or ("p"..hash)
     local existing=portraits:FindFirstChild(id)
     if existing and existing.Value~=encoded then return nil end
     if not existing then
@@ -50,6 +52,7 @@ local function portrait(sender)
 end
 local function process(e, playerId, session, version)
     if type(e)~="table" or type(e.id)~="string" or #e.id>140 or type(e.sender)~="table" then return false,"invalid_event" end
+    if e.kind=="Portrait" then portrait(e.sender);return true end
     if type(e.quantity)~="number" or e.quantity%1~=0 or e.quantity<1 or e.quantity>10000 then return false,"invalid_quantity" end
     local name=tostring(e.sender.name or "viewer")
     if #name>160 then name="viewer" end
@@ -88,7 +91,7 @@ control.OnServerEvent:Connect(function(player,action,input)
     local session,version=token,generation
     status("CONNECTING");live:SetAttribute("Username",name)
     task.spawn(function()
-        local ok=pcall(request,"POST","/connect",{username=name},session)
+        local ok=pcall(request,"POST","/connect",{username=name,protocol=2},session)
         if version~=generation then pcall(request,"POST","/disconnect",{},session);return end
         busy=false
         if not ok then status("ERROR");token=nil;return end
@@ -116,7 +119,7 @@ control.OnServerEvent:Connect(function(player,action,input)
                 failures+=1;status("RETRYING")
                 if failures>=10 then status("ERROR");token=nil;pcall(request,"POST","/disconnect",{},session);break end
             end
-            task.wait(math.min(10,config.PollSeconds*math.max(1,failures)))
+            task.wait(failures>0 and math.min(10,math.max(.2,config.PollSeconds)*failures) or (data and data.hasMore and .03 or math.min(.2,config.PollSeconds)))
         end
     end)
 end)

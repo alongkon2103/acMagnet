@@ -73,11 +73,16 @@ local function accept(giftId, sender, quantity, eventId)
     if type(sender) ~= "table" or type(sender.name) ~= "string" or #sender.name > 160 then return false, "invalid_sender" end
     local cleanSender = {name = sender.name, seed = tonumber(sender.seed) or 1}
     if cleanSender.seed ~= cleanSender.seed or math.abs(cleanSender.seed) > 2147483646 then cleanSender.seed = 1 end
-    if type(sender.avatarId)=="string" and kit.LivePortraits:FindFirstChild(sender.avatarId) then cleanSender.avatarId=sender.avatarId end
+    if type(sender.avatarId)=="string" and ((#sender.avatarId==33 and sender.avatarId:match("^p%x+$")) or kit.LivePortraits:FindFirstChild(sender.avatarId)) then cleanSender.avatarId=sender.avatarId end
     if gift.Blocks then
         local ok, reason = enqueue(gift.Blocks * quantity, cleanSender)
         if not ok then return false, reason end
-    else
+    elseif gift.ArenaExpandPercent then
+        local now=workspace:GetServerTimeNow()
+        local current,target=Arena.Read(now)
+        local percent=math.min(Config.MaxGiftArenaPercent,math.floor(target*100+.5)+gift.ArenaExpandPercent*quantity)
+        state:SetAttribute("ArenaTransition",game:GetService("HttpService"):JSONEncode({from=current,to=percent/100,started=now,duration=Config.ArenaResizeSeconds}))
+    elseif gift.Freeze then
         freezeUntil = math.max(workspace:GetServerTimeNow(), freezeUntil) + gift.Freeze * quantity
     end
     seen[eventId] = workspace:GetServerTimeNow()

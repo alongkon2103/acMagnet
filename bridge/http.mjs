@@ -1,6 +1,6 @@
 import http from 'node:http';
-import {timingSafeEqual} from 'node:crypto';
-import {username,normalizeGift,SessionQueue} from './core.mjs';
+import {timingSafeEqual,createHash} from 'node:crypto';
+import {username,GiftCounter,SessionQueue} from './core.mjs';
 import {avatarPixels} from './avatar.mjs';
 import {LikeCounter} from './likes.mjs';
 export function createBridge({key,giftMap,connect,pixels=avatarPixels}){
@@ -15,18 +15,36 @@ export function createBridge({key,giftMap,connect,pixels=avatarPixels}){
   c.on('streamEnd',()=>{s.ending='OFFLINE';s.status=s.processing?'DRAINING':'OFFLINE';clearTimeout(s.timer);clearTimeout(s.connectTimer);try{c.disconnect();}catch{}});
   const deliver=e=>{
    if(s.received.has(e.id))return;s.received.add(e.id);if(s.received.size>10000)s.received.delete(s.received.values().next().value);
-   if(s.processing>=32){s.imageSkipped++;delete e.avatarUrl;s.queue.push(e);return;}
-   s.processing++;
-   // Serialize only completion delivery, not downloading: stable event IDs make retries safe.
-   Promise.resolve(pixels(e.avatarUrl)).then(p=>{if(p)e.sender.pixels=p;}).catch(()=>{}).finally(()=>{s.processing--;delete e.avatarUrl;if(!s.closed)s.queue.push(e);if(s.ending&&s.processing===0)s.status=s.ending;});
+   // Older published game bridges cannot consume a separate Portrait receipt.
+   if(!s.asyncPortraits){
+    if(s.processing>=32){s.imageSkipped++;delete e.avatarUrl;s.queue.push(e);return;}
+    s.processing++;
+    Promise.resolve().then(()=>pixels(e.avatarUrl)).then(p=>{if(p)e.sender.pixels=p;}).catch(()=>{}).finally(()=>{
+     s.processing--;delete e.avatarUrl;if(!s.closed)s.queue.push(e);if(s.ending&&s.processing===0)s.status=s.ending;
+    });
+    return;
+   }
+   const url=e.avatarUrl;delete e.avatarUrl;
+   const portraitId=typeof url==='string'?'p'+createHash('sha256').update(e.sender.handle+'\n'+url).digest('hex').slice(0,32):null;
+   if(portraitId)e.sender.portraitId=portraitId;
+   const cached=portraitId&&s.profiles.get(portraitId);
+   if(cached?.pixels)e.sender.pixels=cached.pixels;
+   s.queue.push(e); // Gameplay never waits for a remote image download.
+   if(!portraitId||cached)return;
+   if(s.processing>=32||s.profiles.size>=256){s.imageSkipped++;return;}
+   const profile={};s.profiles.set(portraitId,profile);s.processing++;
+   Promise.resolve().then(()=>pixels(url)).then(p=>{
+    if(!p||s.closed)return;
+    profile.pixels=p;
+    s.queue.push({id:'portrait:'+portraitId,kind:'Portrait',sender:{portraitId,pixels:p}});
+   }).catch(()=>{}).finally(()=>{if(!profile.pixels)s.profiles.delete(portraitId);s.processing--;if(s.ending&&s.processing===0)s.status=s.ending;});
   };
   c.on('gift',d=>{
    if(s.closed||s.ending||s.connection!==c)return;
-   if((d.giftDetails?.giftType??d.giftType??d.gift?.type)===1&&!d.repeatEnd)return;
    const giftName=d.giftDetails?.giftName??d.giftName;
    const coinCost=d.giftDetails?.diamondCount??d.diamondCount;
    if(d.giftId&&s.observedGifts.size<500)s.observedGifts.set(String(d.giftId),{id:String(d.giftId),name:giftName,coins:coinCost,mapped:giftMap[String(d.giftId)]??null});
-   const e=normalizeGift(d,giftMap);if(!e){s.unmapped++;return;}
+   const e=s.gifts.accept(d,giftMap);if(!e){if(!giftMap[String(d.giftId)])s.unmapped++;return;}
    deliver(e);
   });
   c.on('like',d=>{
@@ -51,11 +69,11 @@ export function createBridge({key,giftMap,connect,pixels=avatarPixels}){
    const token=req.headers['x-magnet-session'];if(typeof token!=='string'||!/^[a-zA-Z0-9-]{32,100}$/.test(token))return reply(400,{error:'INVALID_SESSION'});
    if(url.pathname==='/connect'&&req.method==='POST'){
     let body='';for await(const chunk of req){body+=chunk;if(body.length>4096)return reply(413,{error:'BODY_TOO_LARGE'});}
-    const name=username(JSON.parse(body).username);
+    const input=JSON.parse(body);const name=username(input.username);
     const now=Date.now();if(now-(attempts.get(token)??0)<3000)return reply(429,{error:'RATE_LIMIT'});
     if(sessions.size>=8&&!sessions.has(token))return reply(429,{error:'CAPACITY'});
     attempts.set(token,now);if(sessions.has(token))stop(sessions.get(token));
-    const s={username:name,queue:new SessionQueue(),likes:new LikeCounter(),received:new Set(),observedGifts:new Map(),processing:0,unmapped:0,imageSkipped:0,lastPoll:now,retries:0,closed:false};sessions.set(token,s);start(s);
+    const s={username:name,asyncPortraits:input.protocol===2,queue:new SessionQueue(),likes:new LikeCounter(),gifts:new GiftCounter(),profiles:new Map(),received:new Set(),observedGifts:new Map(),processing:0,unmapped:0,imageSkipped:0,lastPoll:now,retries:0,closed:false};sessions.set(token,s);start(s);
     return reply(202,{status:s.status,username:name});
    }
    if(url.pathname==='/disconnect'&&req.method==='POST'){const s=sessions.get(token);if(s)stop(s);sessions.delete(token);return reply(200,{status:'DISCONNECTED'});}

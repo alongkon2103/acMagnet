@@ -50,7 +50,9 @@ giftToggle.Activated:Connect(function()player:SetAttribute("MagnetPopup",panel.V
 local function sendGift(id)if canTest then kit.TestGift:FireServer(id) end end
 for i,id in Config.Order do
     local gift=Config.Gifts[id]
-    local b=make("TextButton",{Name=id,Text=gift.Name.."\n"..(gift.Blocks and "+"..gift.Blocks or "10 วิ"),TextSize=12,TextColor3=white,Font=Enum.Font.GothamMedium,AutoButtonColor=true,BackgroundColor3=Color3.fromRGB(227,229,215),Position=UDim2.fromOffset(12+(i-1)*72,28),Size=UDim2.fromOffset(66,48)},panel)
+    local effect=gift.Blocks and "+"..gift.Blocks or gift.Freeze and gift.Freeze.." วิ" or "+"..gift.ArenaExpandPercent.."%"
+    local cell=276/#Config.Order
+    local b=make("TextButton",{Name=id,Text=gift.Name.."\n"..effect,TextSize=11,TextColor3=white,Font=Enum.Font.GothamMedium,AutoButtonColor=true,BackgroundColor3=Color3.fromRGB(227,229,215),Position=UDim2.fromOffset(12+(i-1)*cell,28),Size=UDim2.fromOffset(cell-6,48)},panel)
     round(b,8);b.Activated:Connect(function()sendGift(id)end);buttons[id]=b
 end
 local scoreScale=make("UIScale",{Scale=1},score)
@@ -65,7 +67,7 @@ local function resize()
     camera.FieldOfView=Config.CameraFOV
 end
 camera:GetPropertyChangedSignal("ViewportSize"):Connect(resize);resize()
-local keymap={[Enum.KeyCode.One]="Rose",[Enum.KeyCode.Two]="Roses",[Enum.KeyCode.Three]="Perfume",[Enum.KeyCode.Four]="Bear"}
+local keymap={[Enum.KeyCode.One]="Rose",[Enum.KeyCode.Two]="Roses",[Enum.KeyCode.Three]="Friendship",[Enum.KeyCode.Four]="Bear",[Enum.KeyCode.Five]="Donut"}
 UIS.InputBegan:Connect(function(input,processed)if not processed and keymap[input.KeyCode]then sendGift(keymap[input.KeyCode])end end)
 local visuals = make("Folder",{Name="LocalGiftBlocks"},workspace)
 local PixelPortrait=require(kit:WaitForChild("PixelPortrait"))
@@ -204,7 +206,10 @@ local function received(action,payload)
     end
     elseif action=="Gift" then
         local gift=Config.Gifts[payload.id]
-        announce(payload.sender.name..(gift.Blocks and " +"..(gift.Blocks*payload.quantity) or " • หยุด "..(gift.Freeze*payload.quantity).." วิ"),cyan)
+        local effect=gift.Blocks and " +"..(gift.Blocks*payload.quantity)
+            or gift.Freeze and " • หยุด "..(gift.Freeze*payload.quantity).." วิ"
+            or " • ขยายสนาม +"..(gift.ArenaExpandPercent*payload.quantity).."%"
+        announce(payload.sender.name..effect,cyan)
     elseif action=="Win" then announce("ลานสะอาด!  WIN "..payload,Color3.fromRGB(131,86,48)) end
 end
 kit.Event.OnClientEvent:Connect(received)
