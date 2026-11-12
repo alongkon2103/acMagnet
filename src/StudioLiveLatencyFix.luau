@@ -45,4 +45,3 @@ SSS.BlackHoleServer.Source=server
 kit.Config.Source=config
 SSS.LiveConfig.Source=live
 return "Installed live delivery patch; backup: "..backup.Name
-
