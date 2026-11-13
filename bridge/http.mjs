@@ -1,6 +1,6 @@
 import http from 'node:http';
 import {timingSafeEqual,createHash} from 'node:crypto';
-import {username,GiftCounter,SessionQueue} from './core.mjs';
+import {username,GiftCounter,normalizeFollow,SessionQueue} from './core.mjs';
 import {avatarPixels} from './avatar.mjs';
 import {LikeCounter} from './likes.mjs';
 export function createBridge({key,giftMap,connect,pixels=avatarPixels}){
@@ -43,13 +43,20 @@ export function createBridge({key,giftMap,connect,pixels=avatarPixels}){
    if(s.closed||s.ending||s.connection!==c)return;
    const giftName=d.giftDetails?.giftName??d.giftName;
    const coinCost=d.giftDetails?.diamondCount??d.diamondCount;
-   if(d.giftId&&s.observedGifts.size<500)s.observedGifts.set(String(d.giftId),{id:String(d.giftId),name:giftName,coins:coinCost,mapped:giftMap[String(d.giftId)]??null});
+   const action=giftMap[String(d.giftId)];
+   const supported=s.gacha||!['HeartMe','GoatBusker'].includes(action);
+   if(d.giftId&&s.observedGifts.size<500)s.observedGifts.set(String(d.giftId),{id:String(d.giftId),name:giftName,coins:coinCost,mapped:supported?action??null:null});
+   if(!supported){s.unmapped++;return;}
    const e=s.gifts.accept(d,giftMap);if(!e){if(!giftMap[String(d.giftId)])s.unmapped++;return;}
    deliver(e);
   });
   c.on('like',d=>{
    if(s.closed||s.ending||s.connection!==c)return;
    const e=s.likes.accept(d);if(e)deliver(e);
+  });
+  c.on('follow',d=>{
+   if(s.closed||s.ending||s.connection!==c||!s.follow)return;
+   const e=normalizeFollow(d);if(e)deliver(e);
   });
   s.connectTimer=setTimeout(retry,25000);
   Promise.resolve().then(()=>c.connect()).then(()=>{if(s.closed||s.ending||s.connection!==c){try{c.disconnect();}catch{};return;}clearTimeout(s.connectTimer);s.status='LIVE';s.retries=0;}).catch(e=>{
@@ -73,8 +80,8 @@ export function createBridge({key,giftMap,connect,pixels=avatarPixels}){
     const now=Date.now();if(now-(attempts.get(token)??0)<3000)return reply(429,{error:'RATE_LIMIT'});
     if(sessions.size>=8&&!sessions.has(token))return reply(429,{error:'CAPACITY'});
     attempts.set(token,now);if(sessions.has(token))stop(sessions.get(token));
-    const s={username:name,asyncPortraits:input.protocol===2,queue:new SessionQueue(),likes:new LikeCounter(),gifts:new GiftCounter(),profiles:new Map(),received:new Set(),observedGifts:new Map(),processing:0,unmapped:0,imageSkipped:0,lastPoll:now,retries:0,closed:false};sessions.set(token,s);start(s);
-    return reply(202,{status:s.status,username:name});
+    const s={username:name,asyncPortraits:input.protocol===2,gacha:input.gacha===true,follow:input.follow===true,queue:new SessionQueue(),likes:new LikeCounter(),gifts:new GiftCounter(),profiles:new Map(),received:new Set(),observedGifts:new Map(),processing:0,unmapped:0,imageSkipped:0,lastPoll:now,retries:0,closed:false};sessions.set(token,s);start(s);
+    return reply(202,{status:s.status,username:name,capabilities:{asyncPortraits:s.asyncPortraits,gacha:s.gacha,follow:s.follow}});
    }
    if(url.pathname==='/disconnect'&&req.method==='POST'){const s=sessions.get(token);if(s)stop(s);sessions.delete(token);return reply(200,{status:'DISCONNECTED'});}
    if(url.pathname==='/session/events'&&req.method==='GET'){

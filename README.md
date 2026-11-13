@@ -58,7 +58,7 @@ The installed connector is `tiktok-live-connector@2.5.0`. **Extended gift-catalo
 
 ### Gift mapping
 
-Defaults come from `data/game-gifts.json`, a five-record subset of the owner's supplied `tiktok_gifts.json`, matched to the current Studio gift menu. `GIFT_IDS` in .env is an optional override. Unknown gifts do not create blocks. The authenticated `GET /session/gifts` endpoint lists gift IDs/names observed during that session without fetching the premium extended catalog; polling includes an unmapped counter. Never infer a tier from total coins: 100 roses remain 100 Rose gifts.
+Defaults come from `data/game-gifts.json`, a seven-record subset of the owner's supplied `tiktok_gifts.json`, matched to the current Studio gift menu and F/G controls. `GIFT_IDS` in .env is an optional override. Unknown gifts do not create blocks. The authenticated `GET /session/gifts` endpoint lists gift IDs/names observed during that session without fetching the premium extended catalog; polling includes an unmapped counter. Never infer a tier from total coins: 100 roses remain 100 Rose gifts.
 
 | Database name | Gift ID | Coins | Game action |
 | --- | --- | --- | --- |
@@ -67,6 +67,8 @@ Defaults come from `data/game-gifts.json`, a five-record subset of the owner's s
 | Friendship Necklace | 9947 | 10 | Friendship: freeze 5s |
 | Doughnut | 5879 | 30 | Donut: arena +10 percentage points |
 | Mishka Bear | 5566 | 100 | Bear: +1000 blocks |
+| Heart Me | 7934 | 1 | HeartMe: Mixed gacha, same as F |
+| G.O.A.T. Busker | 626064 | 20 | GoatBusker: Prank gacha, same as G |
 
 Mishka Bear was chosen for the existing “อุ้มใจหมี” slot based on its bear name and 100-coin price; other 100-coin gifts such as Hand Heart are not treated as Bear. This mapping follows the owner's database snapshot; future TikTok regional catalogs may change.
 
@@ -77,6 +79,20 @@ Delivery fix (2026-11-13): enqueue gameplay receipts immediately, without waitin
 For the current Studio game, run `src/StudioLiveLatencyFix.luau` in Edit mode, then restart Play. It backs up the four modified scripts/modules in ServerStorage and patches the current source narrowly, preserving newer UI, powers, follow safeguards and cinematic logic that differ from the older repository snapshots. Deploy the paired backend update and reconnect LIVE after restarting Node. The new bridge sends `protocol: 2` when connecting to opt into asynchronous portraits; older bridges retain inline portraits and never receive unsupported Portrait receipts.
 
 Verification (2026-11-13): 21 Node tests passed locally and on the VPS; Studio process/gateway QA verified 5-second freeze, +10 percentage points, replay suppression and 1024-pixel registration. A late image replaced the temporary print on all six faces of an already spawned block. Bear's first Add reached the client in 0.053–0.070s in local Studio tests; this is not TikTok-to-game latency. Authenticated HTTPS and the normal game connection succeeded; `min44607` reported OFFLINE, so a new paid LIVE receipt was not tested. Reproducible server assertions: `tests/studio/live-gifts-qa.luau`.
+
+### LIVE gacha and follow (2026-11-13)
+
+Heart Me uses the existing F Mixed roll; G.O.A.T. Busker uses the existing G Prank roll. One gift unit queues one roll. The existing server-selected odds, card artwork, sound, 2.4s roll and 2s result remain unchanged. The shared `GachaQueue` also serves F/G/H keyboard controls. TikTok jobs retain the sender's preassigned pixel-profile ID; keyboard jobs use the Roblox player's headshot. `GachaSenderBadge` displays a compact portrait/name above the reel and remains visible during rare-card results; late portraits update only the current sender. Prank blocks inherit that sender's profile too.
+
+Paid intake is bounded at Config.MaxPending (50000) and accepts up to100 units per gateway chunk, independently of animation timing. Free keyboard requests retain the existing128 global /32 per-player pending limits. Excess paid intake returns backpressure without dropping accepted jobs. Accepted paid jobs survive their owner's departure; queued free keyboard jobs are removed. A large donation can create a long visible animation queue, but accepting1000 units in Studio took0.69ms, and the following Rose and Portrait were processed within1.20ms total. These are local simulation timings, not LIVE network latency. A session/generation-scoped receipt cursor resumes the next unaccepted chunk even after the game's one-hour deduplication expires.
+
+The connector's `follow` event produces action `Follow`, quantity1, with string TikTok account ID and profile. The existing Follow +10 rule and `FollowRewardGuard` remain authoritative: one reward per account per broadcaster, persisted across servers. Duplicate messages and refollows do not add another10. A supplied aggregate follow count cannot multiply the reward.
+
+The new game bridge connects with `{username, protocol:2, gacha:true, follow:true}`. `/connect` confirms enabled capabilities. Older sessions do not receive unsupported gacha/follow actions; normal gifts continue. Deploying the backend therefore does not stall older published servers. New Studio changes still need a normal place publish before new public servers can use the features.
+
+Installation into the current native Studio project: install `src/GachaQueue.luau` as ServerScriptService.GachaQueue, `src/GachaSenderBadge.luau` as ReplicatedStorage.BlackHole.GachaSenderBadge, then run `src/StudioLiveGachaSetup.luau` in Edit mode and restart Play. The installer validates/compiles its replacements before writing and backs up the five changed scripts/modules. It preserves newer personal WIN/access logic and the existing gacha UI. The older BlackHoleServer snapshot in this repository predates that native gacha work; use the narrow installer against the current Studio source. `GachaRewards`, `BlockGachaClient` and `FollowRewardGuard` snapshots are tracked for review and recovery.
+
+Verification: 26 Node tests passed locally and on the VPS. Studio tested both Mixed outcomes, Prank-only, F/G/H, sender thumbnails, late portraits,128/32 free limits,200-unit paid intake, departure cleanup,201-unit retries after simulated dedup expiry, and follow +10 with60 profile faces. Follow tests use an in-memory reward store and do not mark test accounts in the real follow-reward DataStore. Assertions live in `tests/studio/gacha-queue-qa.luau`, `live-gacha-bridge-qa.luau`, and `follow-profile-qa.luau`. HTTPS auth/capability smoke and normal game connection passed; min44607 was OFFLINE, so no new real paid gift/follow was observed in this run.
 
 Likes: every 50 likes from the same sender creates 10 blocks with that sender's pixel profile, using action `Likes`. Counts use the raw connector packet's `count`, never the stream-wide `total`. Remainders carry over (120 likes = 20 blocks and 20 likes remaining). Duplicate message IDs are ignored. Progress survives automatic socket retries within a session and resets on a new Connect session. Up to 10,000 recent senders and 100,000 like receipt IDs are retained per session. TikTok may omit like packets on busy streams; only received packets can be counted. Studio gateway verification confirmed exactly +10 blocks and duplicate suppression; the UI displays the rule.
 

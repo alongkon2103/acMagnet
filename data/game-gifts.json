@@ -75,5 +75,37 @@
       "TH",
       "US"
     ]
+  },
+  {
+    "id": 7934,
+    "name": "Heart Me",
+    "coins": 1,
+    "image": "https://p16-webcast.tiktokcdn.com/img/maliva/webcast-va/d56945782445b0b8c8658ed44f894c7b~tplv-resize:258:258.webp",
+    "type": 4,
+    "source": 1,
+    "regions": [
+      "TH",
+      "US"
+    ],
+    "aliases": [
+      "ใจส้ม"
+    ],
+    "key": "HeartMe"
+  },
+  {
+    "id": 626064,
+    "name": "G.O.A.T. Busker",
+    "coins": 20,
+    "image": "https://p16-webcast.tiktokcdn.com/img/alisg/webcast-sg/resource/a9ff60f42b278cc1e8278139dfebfca2.png~tplv-obj.webp",
+    "type": 1,
+    "source": 1,
+    "regions": [
+      "TH",
+      "US"
+    ],
+    "aliases": [
+      "แพะตัวพ่อเปิดหมวก"
+    ],
+    "key": "GoatBusker"
   }
 ]

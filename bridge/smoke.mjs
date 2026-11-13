@@ -7,12 +7,13 @@ const request=async(method,path,body)=>{const r=await fetch(base+path,{method,he
 try{
  const health=await(await fetch(base+'/health')).json();
  const unauthorized=(await fetch(base+'/session/events?after=0')).status;
- const start=await request('POST','/connect',{username:channel,protocol:2});
+ const start=await request('POST','/connect',{username:channel,protocol:2,gacha:true,follow:true});
+ if(!start.capabilities?.gacha||!start.capabilities?.follow||!start.capabilities?.asyncPortraits)throw new Error('MISSING_LIVE_CAPABILITIES');
  let state=start;
  for(let i=0;i<12;i++){
   await new Promise(r=>setTimeout(r,1000));state=await request('GET','/session/events?after=0');
   if(['LIVE','OFFLINE','ERROR','SIGNING_REQUIRED'].includes(state.status))break;
  }
- console.log(JSON.stringify({health:health.ok,unauthorized,start:start.status,channel,status:state.status,events:state.events?.length??0}));
+ console.log(JSON.stringify({health:health.ok,unauthorized,start:start.status,capabilities:start.capabilities,channel,status:state.status,events:state.events?.length??0}));
  if(!health.ok||unauthorized!==401)process.exitCode=1;
 }finally{await request('POST','/disconnect',{});}

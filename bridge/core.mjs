@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-export const giftActions=['Rose','Roses','Friendship','Donut','Bear'];
+export const giftActions=['Rose','Roses','Friendship','Donut','Bear','HeartMe','GoatBusker'];
 export function username(value) {
  const s=String(value??'').trim().replace(/^@/,'').toLowerCase();
  if(!/^[a-z0-9_][a-z0-9_.]{0,23}$/.test(s)) throw new Error('INVALID_USERNAME');
@@ -22,6 +22,21 @@ export function normalizeSender(u) {
  if(typeof handle!=='string'||!handle.length||handle.length>80)return null;
  let seed=0;for(const c of handle)seed=(Math.imul(seed,31)+c.charCodeAt(0))>>>0;
  return {sender:{handle,name:'@'+handle,seed:seed%2147483647},avatarUrl:u.avatarLarge?.urlList?.[0]??u.avatarMedium?.urlList?.[0]??u.avatarThumb?.urlList?.[0]??u.profilePicture?.urls?.[0]??u.profilePictureUrl};
+}
+export function normalizeFollow(d){
+ if(!d||typeof d!=='object')return null;
+ const raw=d.common?.msgId??d.msgId;
+ if(!raw||typeof raw==='number'&&!Number.isSafeInteger(raw))return null;
+ const id='follow:'+String(raw);
+ if(id.length>140)return null;
+ const user=d.user??d;
+ const profile=normalizeSender(user);
+ if(!profile)return null;
+ const uid=user.id??user.userId;
+ const userId=typeof uid==='string'&&/^\d{1,40}$/.test(uid)?uid:undefined;
+ const uniqueId=profile.sender.handle;
+ if(!userId&&!/^[a-zA-Z0-9_][a-zA-Z0-9_.]{0,23}$/.test(uniqueId))return null;
+ return {id,giftId:'Follow',quantity:1,...profile,sender:{...profile.sender,uniqueId,...(userId?{userId}:{})}};
 }
 // Cumulative streak updates share a group ID; grant only the unseen increment.
 export class GiftCounter {

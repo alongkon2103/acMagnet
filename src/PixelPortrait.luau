@@ -130,4 +130,6 @@ function module.ApplyFallback(part,seed)
     if requested and not requested:match("^fallback_") then desired[part]=requested end
     return applied
 end
+-- Shared image access for the single gacha sender badge; no duplicate EditableImage.
+function module.Get(id)return get(id)end
 return module

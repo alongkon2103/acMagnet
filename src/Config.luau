@@ -1,11 +1,14 @@
 return {
     Gifts = {
+        Follow = {Name = "ติดตาม", Coins = 0, Blocks = 10, Color = Color3.fromRGB(255, 88, 142)},
         Likes = {Name = "กดใจ 50 ครั้ง", Coins = 0, Blocks = 10, Color = Color3.fromRGB(255, 88, 142)},
         Rose = {GiftId = 5655, Name = "กุหลาบ", Coins = 1, Blocks = 10, Color = Color3.fromRGB(255, 88, 142)},
         Roses = {GiftId = 8913, Name = "โรซ่า", Coins = 10, Blocks = 100, Color = Color3.fromRGB(177, 112, 255)},
         Friendship = {GiftId = 9947, Name = "Friendship", Coins = 10, Freeze = 5, Color = Color3.fromRGB(73, 219, 255)},
         Donut = {GiftId = 5879, Name = "โดนัท", Coins = 30, ArenaExpandPercent = 10, Color = Color3.fromRGB(255, 145, 192)},
         Bear = {GiftId = 5566, Name = "อุ้มใจหมี", Coins = 100, Blocks = 1000, Color = Color3.fromRGB(255, 193, 94)},
+        HeartMe = {GiftId = 7934, Name = "Heart Me", Coins = 1, GachaMode = "Mixed"},
+        GoatBusker = {GiftId = 626064, Name = "G.O.A.T. Busker", Coins = 20, GachaMode = "Prank"},
     },
     Order = {"Rose", "Roses", "Friendship", "Bear", "Donut"},
     MaxActive = 1600,

@@ -4,7 +4,7 @@ import {EventEmitter} from 'node:events';
 import {createBridge} from './http.mjs';
 import {giftMap} from './gifts.mjs';
 
-async function setup(t,pixels=async()=>null,protocol=2){
+async function setup(t,pixels=async()=>null,protocol=2,gacha=true,follow=true){
  let connection;
  const headers={'x-magnet-key':'test-key-that-is-at-least-32-characters','x-magnet-session':'latency-test-session-aaaaaaaaaaaaaaa','content-type':'application/json'};
  const app=createBridge({key:headers['x-magnet-key'],giftMap,connect:()=>{
@@ -12,8 +12,8 @@ async function setup(t,pixels=async()=>null,protocol=2){
  },pixels});
  await new Promise(r=>app.server.listen(0,'127.0.0.1',r));t.after(()=>app.close());
  const base='http://127.0.0.1:'+app.server.address().port;
- await fetch(base+'/connect',{method:'POST',headers,body:JSON.stringify({username:'host',...(protocol?{protocol}:{})})});
- return {connection,read:async(after=0)=>(await fetch(base+'/session/events?after='+after,{headers})).json()};
+ const start=await(await fetch(base+'/connect',{method:'POST',headers,body:JSON.stringify({username:'host',...(protocol?{protocol}:{}),...(gacha?{gacha:true}:{}),...(follow?{follow:true}:{})})})).json();
+ return {connection,capabilities:start.capabilities,read:async(after=0)=>(await fetch(base+'/session/events?after='+after,{headers})).json()};
 }
 const gift=(id,msg,extra={})=>({giftId:id,common:{msgId:msg},repeatCount:1,user:{displayId:'viewer',avatarThumb:{urlList:['https://p16.tiktokcdn.com/a.webp']}},...extra});
 
@@ -86,4 +86,56 @@ test('old game bridges receive inline portraits and never an unrecognized Portra
  const delivered=await read();
  assert.equal(delivered.events.length,1);assert.equal(delivered.events[0].giftId,'Rose');
  assert.equal(delivered.events[0].sender.pixels.length,256);
+});
+
+test('Heart Me and G.O.A.T. Busker keep sender portraits and grant only unseen gift units',async t=>{
+ let finish;
+ const {connection,read}=await setup(t,()=>new Promise(r=>finish=r));
+ connection.emit('gift',gift(7934,'heart',{giftDetails:{giftType:4},repeatCount:2}));
+ connection.emit('gift',gift(7934,'heart',{giftDetails:{giftType:4},repeatCount:2}));
+ for(const [msg,count,end]of [['goat1',1,false],['goat3',3,false],['goat-final',3,true]]){
+  connection.emit('gift',gift(626064,msg,{giftDetails:{giftType:1},groupId:'626064123',repeatCount:count,repeatEnd:end}));
+ }
+ const before=await read();
+ assert.deepEqual(before.events.map(e=>[e.giftId,e.quantity]),[['HeartMe',2],['GoatBusker',1],['GoatBusker',2]]);
+ const ids=before.events.map(e=>e.sender.portraitId);
+ assert.ok(ids.every(id=>id===ids[0]));assert.match(ids[0],/^p[a-f0-9]{32}$/);
+ finish(Array(1024).fill(0x336699));await new Promise(r=>setImmediate(r));
+ const after=await read(before.cursor);
+ assert.equal(after.events.length,1);assert.equal(after.events[0].kind,'Portrait');
+ assert.equal(after.events[0].sender.portraitId,ids[0]);
+ assert.equal(after.events[0].sender.pixels.length,1024);
+});
+
+test('older game sessions skip unsupported gacha gifts and continue receiving normal gifts',async t=>{
+ const {connection,read}=await setup(t,async()=>null,2,false);
+ connection.emit('gift',gift(7934,'old-heart',{giftDetails:{giftType:4}}));
+ connection.emit('gift',gift(626064,'old-goat',{giftDetails:{giftType:1},repeatEnd:true}));
+ connection.emit('gift',gift(5655,'still-a-rose'));
+ const data=await read();
+ assert.deepEqual(data.events.filter(e=>e.giftId).map(e=>e.giftId),['Rose']);
+ assert.equal(data.unmapped,2);
+});
+
+test('follow grants one profile-linked receipt immediately and keeps platform IDs as strings',async t=>{
+ let finish;
+ const {connection,read,capabilities}=await setup(t,()=>new Promise(r=>finish=r));
+ assert.deepEqual(capabilities,{asyncPortraits:true,gacha:true,follow:true});
+ const raw={common:{msgId:'follow-9223372036854775801'},user:{id:'9223372036854775801',displayId:'new_follower',avatarThumb:{urlList:['https://p16.tiktokcdn.com/follow.webp']}}};
+ connection.emit('follow',raw);connection.emit('follow',raw);
+ const first=await read();
+ assert.equal(first.events.length,1);assert.equal(first.events[0].giftId,'Follow');
+ assert.equal(first.events[0].quantity,1);assert.equal(first.events[0].sender.userId,'9223372036854775801');
+ assert.equal(first.events[0].sender.uniqueId,'new_follower');
+ const id=first.events[0].sender.portraitId;assert.match(id,/^p[a-f0-9]{32}$/);
+ finish(Array(1024).fill(0x123456));await new Promise(r=>setImmediate(r));
+ const late=await read(first.cursor);assert.equal(late.events[0].kind,'Portrait');
+ assert.equal(late.events[0].sender.portraitId,id);
+});
+
+test('legacy sessions never receive unsupported follow actions',async t=>{
+ const {connection,read}=await setup(t,async()=>null,2,false,false);
+ connection.emit('follow',{common:{msgId:'legacy-follow'},user:{id:'123456',displayId:'follower'}});
+ connection.emit('gift',gift(5655,'after-follow'));
+ assert.deepEqual((await read()).events.filter(e=>e.giftId).map(e=>e.giftId),['Rose']);
 });

@@ -11,6 +11,23 @@ local portraits = kit:WaitForChild("LivePortraits")
 local gateway = ServerScriptService:WaitForChild("BlackHoleServer"):WaitForChild("SubmitGift")
 local token, generation, cursor, owner = nil, 0, 0, nil
 local busy, cooldown = false, {}
+local followGuard = require(ServerScriptService:WaitForChild("FollowRewardGuard")).new(
+ function(channel) return game:GetService("DataStoreService"):GetDataStore("TikTokFollowRewards_v1", channel) end,
+ function() return Http:GenerateGUID(false) end)
+local function isFollow(e)
+ local kind=tostring(e.giftId or e.type or e.kind or e.event or ""):lower()
+ return kind=="follow" or kind=="follows"
+end
+local function followIdentity(sender)
+ local id=sender.userId or sender.id
+ if type(id)=="string" and id:match("^%d+$") and #id<=40 then return "uid:"..id end
+ local name=sender.uniqueId or sender.username
+ if type(name)=="string"then
+  name=name:lower():gsub("^@","")
+  if #name>0 and #name<=24 and name:match("^[%w_%.]+$")then return "user:"..name end
+ end
+ return nil
+end
 local function operator(player)
     return RunService:IsStudio() or table.find(config.OperatorUserIds, player.UserId) ~= nil
         or (game.CreatorType == Enum.CreatorType.User and player.UserId == game.CreatorId)
@@ -50,10 +67,14 @@ local function portrait(sender)
     end
     return id
 end
+local receiptProgress
 local function process(e, playerId, session, version)
     if type(e)~="table" or type(e.id)~="string" or #e.id>140 or type(e.sender)~="table" then return false,"invalid_event" end
     if e.kind=="Portrait" then portrait(e.sender);return true end
-    if type(e.quantity)~="number" or e.quantity%1~=0 or e.quantity<1 or e.quantity>10000 then return false,"invalid_quantity" end
+    local following=isFollow(e)
+    if not following and (type(e.quantity)~="number" or e.quantity%1~=0 or e.quantity<1 or e.quantity>10000) then return false,"invalid_quantity" end
+    local identity=following and followIdentity(e.sender)
+    if following and not identity then return true,"ignored_invalid_follow" end
     local name=tostring(e.sender.name or "viewer")
     if #name>160 then name="viewer" end
     if not RunService:IsStudio() then
@@ -62,18 +83,30 @@ local function process(e, playerId, session, version)
     end
     if token~=session or generation~=version then return false,"cancelled" end
     local sender={name=name,seed=e.sender.seed,avatarId=portrait(e.sender)}
-    -- Existing gateway accepts at most 100 per receipt. Retry retains stable chunk IDs.
-    local left=e.quantity
-    local chunk=0
-    while left>0 do
-        chunk+=1
+    if following then
+        local channel=live:GetAttribute("Username")
+        return followGuard(channel,identity,function()
+            if token~=session or generation~=version then return false,"cancelled"end
+            return gateway:Invoke("Follow",sender,1,"follow:"..channel..":"..identity)
+        end)
+    end
+    -- Resume the failed chunk even if a long queue outlives gateway dedup retention.
+    local progress=receiptProgress
+    if not progress or progress.id~=e.id or progress.session~=session or progress.version~=version then
+        progress={id=e.id,session=session,version=version,left=e.quantity,chunk=1}
+        receiptProgress=progress
+    end
+    while progress.left>0 do
+        if token~=session or generation~=version then return false,"cancelled" end
         local gift=require(kit.Config).Gifts[e.giftId]
         if not gift then return false,"unknown_gift" end
-        local amount=math.min(left,math.min(100,math.floor(require(kit.Config).MaxPending/(gift.Blocks or 1))))
-        local ok,reason=gateway:Invoke(e.giftId,sender,amount,e.id..":"..chunk)
+        local amount=math.min(progress.left,math.min(100,math.floor(require(kit.Config).MaxPending/(gift.Blocks or 1))))
+        local ok,reason=gateway:Invoke(e.giftId,sender,amount,e.id..":"..progress.chunk,playerId)
         if not ok and reason~="duplicate" then return false,reason end
-        left-=amount
+        progress.left-=amount
+        progress.chunk+=1
     end
+    receiptProgress=nil
     return true
 end
 control.OnServerEvent:Connect(function(player,action,input)
@@ -91,7 +124,7 @@ control.OnServerEvent:Connect(function(player,action,input)
     local session,version=token,generation
     status("CONNECTING");live:SetAttribute("Username",name)
     task.spawn(function()
-        local ok=pcall(request,"POST","/connect",{username=name,protocol=2},session)
+        local ok=pcall(request,"POST","/connect",{username=name,protocol=2,gacha=true,follow=true},session)
         if version~=generation then pcall(request,"POST","/disconnect",{},session);return end
         busy=false
         if not ok then status("ERROR");token=nil;return end

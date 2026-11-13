@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {normalizeGift, normalizeSender, SessionQueue, username} from './core.mjs';
+import {normalizeGift, normalizeSender, normalizeFollow, SessionQueue, username} from './core.mjs';
 
 test('username accepts handle but rejects URLs',()=>{
  assert.equal(username(' @Some.one '),'some.one');
@@ -38,4 +38,15 @@ test('cursor replay, deduplication and overflow are explicit',()=>{
  q.push({id:'d'});
  assert.equal(q.read(0).gap,true);assert.equal(q.read(0).dropped,1);
  assert.equal(q.read(2,1).cursor,3);
+});
+
+test('follow ignores aggregate counts and rejects unsafe receipt IDs or unidentifiable accounts',()=>{
+ const raw={common:{msgId:'follow-id'},count:900,quantity:1000,user:{id:'9223372036854775801',displayId:'follower'}};
+ const event=normalizeFollow(raw);
+ assert.equal(event.quantity,1);assert.equal(event.sender.userId,'9223372036854775801');
+ assert.equal(normalizeFollow({...raw,common:{msgId:9007199254740994}}),null);
+ assert.equal(normalizeFollow({...raw,user:{id:9007199254740994,displayId:'bad handle'}}),null);
+ const fallback=normalizeFollow({...raw,user:{id:9007199254740994,displayId:'safe_handle'}});
+ assert.equal(fallback.sender.userId,undefined);assert.equal(fallback.sender.uniqueId,'safe_handle');
+ assert.equal(normalizeFollow(null),null);
 });
