@@ -16,7 +16,7 @@ return {
     MaxActive = 1600, -- Capacity at the default arena size; also bounds the client reuse pool.
     MaxExpandedActive = 10000,
     MaxPending = 50000,
-    SpawnPerSecond = 100,
+    SpawnPerSecond = 300,
     InitialBlocks = 500,
     ClearSeconds = 10,
     PlayerSpeed = 16,

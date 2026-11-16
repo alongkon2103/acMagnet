@@ -5,6 +5,10 @@ local player=Players.LocalPlayer
 local kit=game.ReplicatedStorage:WaitForChild("BlackHole")
 local remote=kit:WaitForChild("BlockGacha")
 local Rewards=require(kit:WaitForChild("GachaRewards"))
+local Items=require(kit:WaitForChild("MixedGachaItems"))
+local function rewardImage(reward)
+ return reward.id and Items.Image(reward) or kit:GetAttribute("GachaCard"..reward.tier)
+end
 local ContentProvider=game:GetService("ContentProvider")
 local function preloadCards()
  local images={}
@@ -16,12 +20,19 @@ local function preloadCards()
    table.insert(images,image)
   end
  end
+ for _,item in ipairs(Items.Items)do
+  local id=Items.Image(item)
+  if type(id)=="string" and id:match("^rbxassetid://%d+$")then
+   local image=Instance.new("ImageLabel");image.Image=id;table.insert(images,image)
+  end
+ end
  if #images>0 then task.spawn(function()
   pcall(function()ContentProvider:PreloadAsync(images)end)
   for _,image in ipairs(images)do image:Destroy()end
  end)end
 end
 for _,r in ipairs(Rewards.Rewards)do kit:GetAttributeChangedSignal("GachaCard"..r.tier):Connect(preloadCards)end
+for _,item in ipairs(Items.Items)do kit:GetAttributeChangedSignal("GachaItem_"..item.id):Connect(preloadCards)end
 preloadCards()
 local gui=Instance.new("ScreenGui")
 gui.Name="BlockGachaHUD";gui.ResetOnSpawn=false;gui.DisplayOrder=25
@@ -63,7 +74,7 @@ end
 local info=make("TextButton",dock,{Name="OddsButton",Position=UDim2.fromOffset(134,5),Size=UDim2.fromOffset(23,22),BackgroundColor3=Color3.fromRGB(214,227,201),Text="i",TextColor3=ink,TextSize=14,Font=Enum.Font.GothamBold})
 round(info,8)
 local queueText=label(dock,"Queue",0,154,166,20,"",12,ink)
-local odds=make("Frame",gui,{Name="Odds",AnchorPoint=Vector2.new(1,0),Position=UDim2.new(1,-16,0,269),Size=UDim2.fromOffset(250,201),BackgroundColor3=cream,Visible=false})
+local odds=make("Frame",gui,{Name="Odds",AnchorPoint=Vector2.new(1,0),Position=UDim2.new(1,-16,0,269),Size=UDim2.fromOffset(250,233),BackgroundColor3=cream,Visible=false})
 round(odds,14);stroke(odds,gold,1)
 label(odds,"Title",12,9,198,25,"อัตรารางวัล",15,ink)
 local dismiss=make("TextButton",odds,{Name="Close",Position=UDim2.fromOffset(217,8),Size=UDim2.fromOffset(25,25),BackgroundTransparency=1,Text="×",TextColor3=ink,TextSize=20})
@@ -76,6 +87,7 @@ for i,r in ipairs(Rewards.Rewards)do
  label(row,"Amount",116,0,57,27,tostring(r.amount),12,ink)
  label(row,"Chance",176,0,51,27,r.weight.."%",12,ink)
 end
+label(odds,"MixedOdds",10,200,230,24,"F · ของ 10 แบบ โอกาสแบบละ 10%",11,ink)
 info.Activated:Connect(function()odds.Visible=not odds.Visible end)
 local panel=make("Frame",gui,{Name="ReelPanel",AnchorPoint=Vector2.new(.5,0),Position=UDim2.new(.5,0,.19,0),Size=UDim2.fromOffset(500,230),BackgroundColor3=cream,Visible=false})
 round(panel,19)
@@ -126,7 +138,7 @@ local function card(index,reward,mode)
  label(cube,"Smile",12,17,14,18,"⌣",14,Color3.fromRGB(22,48,41))
  label(box,"Amount",0,55,92,24,(mode=="Prank" and "+"or "−")..reward.amount,20,mode=="Prank" and red or green)
  label(box,"Tier",0,80,92,16,string.upper(reward.tier),9,reward.color:Lerp(ink,.55))
- local imageId=kit:GetAttribute("GachaCard"..reward.tier)
+ local imageId=rewardImage(reward)
  if type(imageId)=="string" and imageId:match("^rbxassetid://%d+$") then
   local picture=make("ImageLabel",box,{
    Name="FullArtCard",BackgroundTransparency=1,Position=UDim2.fromOffset(0,0),
@@ -145,6 +157,11 @@ local function card(index,reward,mode)
   box.Tier.Position=UDim2.fromOffset(0,120)
   box.Amount.Position=UDim2.fromOffset(0,93)
  end
+ if reward.id then
+  box.Amount.Text=reward.name;box.Amount.TextSize=12
+  box.Amount.Visible=not box:FindFirstChild("FullArtCard")
+  box:SetAttribute("ItemId",reward.id)
+ end
  box.Tier.Visible=false
  cards[index]=box
 
@@ -156,9 +173,10 @@ local selected
 local function refresh()
  dock.Visible=player:GetAttribute("CanUseMagnetBoost")==true
  local n=player:GetAttribute("GachaQueue")or 0
- queueText.Text=n>0 and ("คิว "..n)or ""
+ queueText.Text=player:GetAttribute("GachaWaiting")==true and "รอพื้นที่ลงบล็อค…"or (n>0 and ("คิว "..n)or "")
 end
 player:GetAttributeChangedSignal("GachaQueue"):Connect(refresh)
+player:GetAttributeChangedSignal("GachaWaiting"):Connect(refresh)
 player:GetAttributeChangedSignal("CanUseMagnetBoost"):Connect(refresh);refresh()
 request=function(mode)
  if player:GetAttribute("CanUseMagnetBoost")==true then remote:FireServer(mode)end
@@ -203,7 +221,7 @@ local function popRare(reward,mode,meteor)
  local fit=make("UIScale",group,{Scale=math.min(1,(gui.AbsoluteSize.X-32)/300,(gui.AbsoluteSize.Y*.68)/380)})
  local art=make("ImageLabel",group,{Name="RareCard",AnchorPoint=Vector2.new(.5,.5),
   Position=UDim2.fromScale(.5,.46),Size=UDim2.fromOffset(250,334),BackgroundTransparency=1,
-  Image=kit:GetAttribute("GachaCard"..reward.tier) or "",ScaleType=Enum.ScaleType.Fit,ZIndex=21,Rotation=-9})
+  Image=rewardImage(reward) or "",ScaleType=Enum.ScaleType.Fit,ZIndex=21,Rotation=-9})
  local grow=make("UIScale",art,{Scale=.12})
  local amount=label(group,"RareAmount",0,318,300,52,(mode=="Prank" and "+" or "−")..reward.amount,42,
   mode=="Prank" and Color3.fromRGB(255,105,130) or Color3.fromRGB(105,255,164))
@@ -231,14 +249,13 @@ local function display(kind,data)
   clearRare();lastSlot=nil;tickSound:Stop()
   if reelTween then reelTween:Cancel()end
   strip:ClearAllChildren();table.clear(cards)
-  local reward=Rewards.Find(data.amount)
+  local reward=data.itemId and Items.Find(data.itemId) or Rewards.Find(data.amount)
   if not reward then return end
   selected=reward
   local targetIndex=29
   for i=1,33 do
-   local mode=data.mode
-   if data.requestedMode=="Mixed" and i~=targetIndex then mode=random:NextNumber()<.5 and "Prank" or "Help" end
-   card(i,i==targetIndex and reward or Rewards.Roll(random),mode)
+   local entry=i==targetIndex and reward or (data.itemId and Items.Roll(random) or Rewards.Roll(random))
+   card(i,entry,entry.mode or data.mode)
   end
   panel.Visible=true
   panel:SetAttribute("Phase","Rolling");panel:SetAttribute("ExpectedAmount",data.amount)
@@ -259,13 +276,14 @@ local function display(kind,data)
   serial+=1;local token=serial
   if not senderBadge.Root.Visible then senderBadge.Show(data.sender or {name=data.name})end
   tickSound:Stop()
-  local reward=Rewards.Find(data.amount)
+  local reward=data.itemId and Items.Find(data.itemId) or Rewards.Find(data.amount)
   if not reward then return end
   if reelTween then reelTween:Cancel()end
   if endOffset then strip.Position=UDim2.fromOffset(endOffset,0)end
   edge.Color=reward.color:Lerp(gold,.4);markerEdge.Color=reward.color:Lerp(ink,.25)
   panel:SetAttribute("Phase","Result");panel:SetAttribute("ResultAmount",data.amount)
   panel:SetAttribute("ResolvedMode",data.mode)
+  panel:SetAttribute("ResultItem",data.itemId)
   if data.meteor then panel.Visible=false end
   resultLabel.Text=reward.tier.."  ·  "..(data.mode=="Prank" and "+"or "−")..data.actual.." บล็อก"
   if data.actual<data.amount then resultLabel.Text..=data.mode=="Help" and " (หมดสนามแล้ว)"or " (คิวเต็ม)"end

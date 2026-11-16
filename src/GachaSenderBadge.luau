@@ -2,6 +2,7 @@ local Players=game:GetService("Players")
 local Tween=game:GetService("TweenService")
 local kit=game.ReplicatedStorage:WaitForChild("BlackHole")
 local registry=kit:WaitForChild("LivePortraits")
+local names=kit:WaitForChild("LiveNames")
 local Portrait=require(kit:WaitForChild("PixelPortrait"))
 local thumbnails={}
 local thumbnailCount=0
@@ -31,6 +32,24 @@ function Badge.Create(parent)
  name.TextColor3=Color3.fromRGB(50,79,61);name.TextXAlignment=Enum.TextXAlignment.Left
  name.TextTruncate=Enum.TextTruncate.AtEnd;name.ZIndex=31;name.Parent=frame
  local generation,current,tween=0,nil,nil
+ local nameConnection
+ local observedName
+ local function refreshName()
+  if nameConnection then nameConnection:Disconnect();nameConnection=nil end
+  observedName=current and current.nameId and names:FindFirstChild(current.nameId)or nil
+  name.Text=observedName and observedName.Value or tostring(current and current.name or "viewer")
+  frame:SetAttribute("SenderName",name.Text)
+  if observedName then
+   local value=observedName
+   nameConnection=value:GetPropertyChangedSignal("Value"):Connect(function()
+    if current and current.nameId==value.Name then name.Text=value.Value;frame:SetAttribute("SenderName",name.Text)end
+   end)
+  end
+ end
+ local nameAdded=names.ChildAdded:Connect(function(value)
+  if current and current.nameId==value.Name then refreshName()end
+ end)
+
  local function clearPhoto()
   photo.Image=""
   for _,v in photo:GetChildren()do if v.Name=="PixelRun"then v:Destroy()end end
@@ -82,7 +101,7 @@ function Badge.Create(parent)
   generation+=1;local version=generation
   current=table.clone(sender or {})
   clearPhoto()
-  name.Text=tostring(current.name or "viewer")
+  refreshName()
   initial.Text=name.Text:match("[A-Za-z0-9]")or "?"
   frame:SetAttribute("SenderName",name.Text)
   frame:SetAttribute("SenderAvatarId",current.avatarId)
@@ -110,11 +129,12 @@ function Badge.Create(parent)
  end
  function api.Hide()
   generation+=1;current=nil
+  if nameConnection then nameConnection:Disconnect();nameConnection=nil end
   if tween then tween:Cancel()end
   frame.Visible=false
  end
  function api.Destroy()
-  api.Hide();resizeConnection:Disconnect();portraitConnection:Disconnect();frame:Destroy()
+  api.Hide();resizeConnection:Disconnect();portraitConnection:Disconnect();nameAdded:Disconnect();frame:Destroy()
  end
  return api
 end

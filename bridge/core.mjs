@@ -40,7 +40,7 @@ export function normalizeFollow(d){
 }
 // Cumulative streak updates share a group ID; grant only the unseen increment.
 export class GiftCounter {
- constructor(){this.groups=new Map();}
+ constructor(groups=new Map()){this.groups=groups;this.nextSweep=0;}
  accept(d,map){
   const streak=(d.giftDetails?.giftType??d.giftType??d.gift?.type)===1;
   const group=d.groupId;
@@ -49,7 +49,7 @@ export class GiftCounter {
   if(!e)return null;
   const key=createHash('sha256').update(JSON.stringify([e.sender.handle.toLowerCase(),String(d.giftId),group])).digest('hex').slice(0,32);
   const now=Date.now();
-  for(const [id,old]of this.groups)if(now-old.at>3600000)this.groups.delete(id);
+  if(now>=this.nextSweep){for(const [id,old]of this.groups)if(now-old.at>3600000)this.groups.delete(id);this.nextSweep=now+30000;}
   const old=this.groups.get(key);
   if(e.quantity<=(old?.count??0))return null;
   if(!old&&this.groups.size>=10000)return null;

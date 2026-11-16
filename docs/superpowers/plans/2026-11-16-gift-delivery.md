@@ -1,0 +1,17 @@
+# Gift delivery reliability and latency
+
+Observed baseline:6000 received events overwrite4000 entries in the2000-event memory queue, including an early Bear receipt;6k pushes take~1.14s. The game reads20 events per HTTP round, filters every external name synchronously, and serializes gacha effects behind2.4s rolls/2s results. Gacha partial enqueue or failed item application can be reported as completed with less than the selected reward.
+
+Implement against the current native Studio source; preserve MixedGachaItems, WIN/access rules,150-like counter and unrelated user edits.
+
+- [x] Add negotiated reliable delivery using Node22 built-in SQLite/WAL: retain pending receipts until explicit per-sequence acknowledgment within the documented24-hour unpolled retention window, recover sessions after a backend restart, preserve dedup/streak state, prioritize control/profile messages and read up to100 slim receipts. Keep the legacy protocol compatible.
+- [x] Add real HTTP regressions for burst retention, duplicate replay, ack loss, session isolation, restart recovery and bounded long polling; benchmark throughput and first-paid-event availability.
+- [x] Make game ingestion concurrent/bounded, resume each failed receipt independently and piggyback acknowledgments on polling. Pace requests below the game-server HTTP budget. Make safe-name filtering asynchronous and cached; never display unfiltered external text.
+- [x] Preserve each selected gacha outcome while retrying temporary failures and remaining block credits. Accelerate paid presentation under backlog; cosmetic waits must not consume a paid reward. Keep free controls/access checks intact. Faster bounded block spawning retains the active cap and queued credits.
+- [x] Test deterministic paid failures/partial credits, large bursts and real Studio gateway/profile rendering. Review, back up and deploy the paired API/game changes. Report simulated versus actual LIVE evidence honestly.
+
+Verified:36/36 Node tests locally and on the deployed VPS; fresh read-only review resolved priority-page starvation, reliable HTTP retry teardown, dormant queue expiry and Docker runtime permissions. VPS synthetic6000-event benchmark: legacy2367ms intake/4000 dropped; durable reliable945ms intake/zero dropped, with the early Bear and urgent Freeze in the first offered batch. This measures queue intake, not real network latency.
+
+Studio passed gacha-credit, delivery-pump, safe-name-cache, legacy gacha queue,201-unit bridge recovery,4000-block burst, freeze/expand, follow/profile and150-like integration QA. Client had1806 rendered blocks and10836 face prints at170% arena scale; profile tests were synthetic. All290 source containers present before the final normalized reinstall compiled, including backups. Real normal game HTTPS negotiated reliable=true, pending=0 and Dropped=0; min44607 was OFFLINE, so real paid LIVE gift delivery is unverified. VPS backup:runtime/delivery-backup-20261116-1514. Studio backup:ServerStorage.BeforeDelivery_20261116_151605_0cb5e562. Publication remains a separate normal Studio action.
+
+Constraints: no plaintext LiveConfig or.env output; no user .blend edits; no automatic Roblox place publishing. Reliable transport is opt-in so older published servers retain their expected response schema. SQLite queue persistence covers unacknowledged backend receipts, not a guarantee against arbitrary Roblox world/server resets after acceptance.

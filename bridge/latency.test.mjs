@@ -120,7 +120,7 @@ test('older game sessions skip unsupported gacha gifts and continue receiving no
 test('follow grants one profile-linked receipt immediately and keeps platform IDs as strings',async t=>{
  let finish;
  const {connection,read,capabilities}=await setup(t,()=>new Promise(r=>finish=r));
- assert.deepEqual(capabilities,{asyncPortraits:true,gacha:true,follow:true,rawLikes:false});
+ assert.deepEqual(capabilities,{asyncPortraits:true,gacha:true,follow:true,rawLikes:false,reliable:false});
  const raw={common:{msgId:'follow-9223372036854775801'},user:{id:'9223372036854775801',displayId:'new_follower',avatarThumb:{urlList:['https://p16.tiktokcdn.com/follow.webp']}}};
  connection.emit('follow',raw);connection.emit('follow',raw);
  const first=await read();

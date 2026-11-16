@@ -1,13 +1,14 @@
 local Http = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local TextService = game:GetService("TextService")
 local ServerScriptService = game:GetService("ServerScriptService")
 local config = require(ServerScriptService:WaitForChild("LiveConfig"))
 local kit = game:GetService("ReplicatedStorage"):WaitForChild("BlackHole")
 local control = kit:WaitForChild("LiveControl")
 local live = kit:WaitForChild("LiveState")
 local portraits = kit:WaitForChild("LivePortraits")
+local nameCache=require(ServerScriptService:WaitForChild("LiveNameCache")).new({registry=kit:WaitForChild("LiveNames")})
+local DeliveryPump=require(ServerScriptService:WaitForChild("LiveDeliveryPump"))
 local gateway = ServerScriptService:WaitForChild("BlackHoleServer"):WaitForChild("SubmitGift")
 local token, generation, cursor, owner = nil, 0, 0, nil
 local busy, cooldown = false, {}
@@ -43,9 +44,9 @@ local function operator(player)
     return player ~= nil and player.Parent == Players
 end
 local function status(value) live:SetAttribute("Status", value) end
-local function request(method, path, body, session)
+local function request(method, path, body, session, acks)
     local response = Http:RequestAsync({Url=config.BridgeUrl..path, Method=method,
-        Headers={["X-Magnet-Key"]=config.BridgeKey,["X-Magnet-Session"]=session,["Content-Type"]="application/json"},
+        Headers={["X-Magnet-Key"]=config.BridgeKey,["X-Magnet-Session"]=session,["Content-Type"]="application/json",["X-Magnet-Ack"]=acks and #acks>0 and Http:JSONEncode(acks)or nil},
         Body=method=="POST" and Http:JSONEncode(body or {}) or nil})
     if not response.Success then error("HTTP_"..response.StatusCode) end
     return Http:JSONDecode(response.Body)
@@ -77,7 +78,11 @@ local function portrait(sender)
     end
     return id
 end
-local receiptProgress
+local function filteredSender(e,playerId)
+    local name,nameId=nameCache.Get(e.sender.name or "viewer",playerId)
+    return {name=name,nameId=nameId,seed=e.sender.seed,avatarId=portrait(e.sender)}
+end
+local receiptProgress={}
 local function process(e, playerId, session, version)
     if type(e)~="table" or type(e.id)~="string" or #e.id>140 or type(e.sender)~="table" then return false,"invalid_event" end
     if e.kind=="Portrait" then portrait(e.sender);return true end
@@ -99,15 +104,9 @@ local function process(e, playerId, session, version)
         live:SetAttribute("LastIssue","follow_missing_account_id")
         return true,"ignored_invalid_follow"
     end
-    local name=tostring(e.sender.name or "viewer")
-    if #name>160 then name="viewer" end
-    if not RunService:IsStudio() then
-        local ok,filtered=pcall(function() return TextService:FilterStringAsync(name,playerId):GetNonChatStringForBroadcastAsync() end)
-        name=ok and filtered or "TikTok viewer"
-    end
     if token~=session or generation~=version then return false,"cancelled" end
-    local sender={name=name,seed=e.sender.seed,avatarId=portrait(e.sender)}
     if following then
+        local sender=filteredSender(e,playerId)
         local channel=live:GetAttribute("Username")
         return followGuard(channel,identity,function()
             if token~=session or generation~=version then return false,"cancelled" end
@@ -118,16 +117,18 @@ local function process(e, playerId, session, version)
         local counter=likeCounter
         local ok,reason=counter:Process(e,function(quantity,receipt)
             if token~=session or generation~=version then return false,"cancelled"end
+            local sender=filteredSender(e,playerId)
             return gateway:Invoke("Likes",sender,quantity,receipt,playerId)
         end)
         if counter==likeCounter then publishLikes()end
         return ok,reason
     end
+    local sender=filteredSender(e,playerId)
     -- Resume the failed chunk even if a long queue outlives gateway dedup retention.
-    local progress=receiptProgress
+    local progress=receiptProgress[e.id]
     if not progress or progress.id~=e.id or progress.session~=session or progress.version~=version then
         progress={id=e.id,session=session,version=version,left=e.quantity,chunk=1}
-        receiptProgress=progress
+        receiptProgress[e.id]=progress
     end
     while progress.left>0 do
         if token~=session or generation~=version then return false,"cancelled" end
@@ -139,7 +140,7 @@ local function process(e, playerId, session, version)
         progress.left-=amount
         progress.chunk+=1
     end
-    receiptProgress=nil
+    if receiptProgress[e.id]==progress then receiptProgress[e.id]=nil end
     return true
 end
 control.OnServerEvent:Connect(function(player,action,input)
@@ -159,35 +160,59 @@ control.OnServerEvent:Connect(function(player,action,input)
     local session,version=token,generation
     status("CONNECTING");live:SetAttribute("Username",name)
     task.spawn(function()
-        local ok=pcall(request,"POST","/connect",{username=name,protocol=2,gacha=true,follow=true,rawLikes=true},session)
+        local ok,connected=pcall(request,"POST","/connect",{username=name,protocol=2,gacha=true,follow=true,rawLikes=true,reliable=true},session)
         if version~=generation then pcall(request,"POST","/disconnect",{},session);return end
         busy=false
         if not ok then status("ERROR");token=nil;return end
+        local reliable=type(connected)=="table" and connected.capabilities and connected.capabilities.reliable==true
+        local pump=reliable and DeliveryPump.new({
+            valid=function()return token==session and generation==version end,
+            process=function(e)return process(e,owner,session,version)end,
+        })or nil
         local failures=0
+        local function terminal(value)return value=="OFFLINE" or value=="ERROR" or value=="DISCONNECTED" or value=="SIGNING_REQUIRED"end
         while token==session and generation==version do
-            local success,data=pcall(request,"GET","/session/events?after="..cursor,nil,session)
+            local requested=os.clock()
+            local acks=pump and pump.Acks()or nil
+            local path=pump and "/session/events?limit=100&waitMs=1000"or "/session/events?after="..cursor
+            local success,data=pcall(request,"GET",path,nil,session,acks)
             if version~=generation then break end
             if success and type(data)=="table" then
                 failures=0;status(data.status or "ERROR")
+                live:SetAttribute("ReliableDelivery",reliable)
                 live:SetAttribute("Dropped",data.dropped or 0);live:SetAttribute("Unmapped",data.unmapped or 0)
-                if data.gap then live:SetAttribute("Gap",true) end
-                local blocked=false
-                for _,e in ipairs(data.events or {}) do
-                    local accepted,reason=process(e,owner,session,version)
-                    if version~=generation or token~=session then return end
-                    if not accepted then status("BACKPRESSURE");live:SetAttribute("LastIssue",reason);blocked=true;break end
-                    cursor=e.seq
-                end
-                if not blocked then cursor=data.cursor or cursor end
-                if not blocked and not data.hasMore and (data.status=="OFFLINE" or data.status=="ERROR" or data.status=="DISCONNECTED" or data.status=="SIGNING_REQUIRED") then
-                    token=nil
-                    pcall(request,"POST","/disconnect",{},session);break
+                live:SetAttribute("DeliveryPending",data.pending or 0);live:SetAttribute("DeliveryLagMs",data.oldestAgeMs or 0)
+                live:SetAttribute("DeliveryWriteRetries",data.retryingWrites or 0)
+                if data.gap then live:SetAttribute("Gap",true)end
+                if pump then
+                    pump.Confirm(acks)
+                    pump.Receive(data.events)
+                    local stats=pump.Stats()
+                    live:SetAttribute("DeliveryInFlight",stats.active);live:SetAttribute("DeliveryRetries",stats.failures)
+                    if stats.lastIssue then live:SetAttribute("LastIssue",stats.lastIssue)end
+                    if data.pending==0 and pump.Idle() and terminal(data.status) then
+                        token=nil;pcall(request,"POST","/disconnect",{},session);break
+                    end
+                else
+                    local blocked=false
+                    for _,e in ipairs(data.events or {})do
+                        local accepted,reason=process(e,owner,session,version)
+                        if version~=generation or token~=session then return end
+                        if not accepted then status("BACKPRESSURE");live:SetAttribute("LastIssue",reason);blocked=true;break end
+                        cursor=e.seq
+                    end
+                    if not blocked then cursor=data.cursor or cursor end
+                    if not blocked and not data.hasMore and terminal(data.status)then
+                        token=nil;pcall(request,"POST","/disconnect",{},session);break
+                    end
                 end
             else
                 failures+=1;status("RETRYING")
-                if failures>=10 then status("ERROR");token=nil;pcall(request,"POST","/disconnect",{},session);break end
+                if failures>=10 and not reliable then status("ERROR");token=nil;pcall(request,"POST","/disconnect",{},session);break end
             end
-            task.wait(failures>0 and math.min(10,math.max(.2,config.PollSeconds)*failures) or (data and data.hasMore and .03 or math.min(.2,config.PollSeconds)))
+            if failures>0 then task.wait(math.min(10,math.max(.2,config.PollSeconds)*failures))
+            elseif pump then task.wait(math.max(.01,.18-(os.clock()-requested)))
+            else task.wait(math.min(.2,config.PollSeconds))end
         end
     end)
 end)
