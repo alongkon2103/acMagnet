@@ -80,8 +80,8 @@ export function createBridge({key,giftMap,connect,pixels=avatarPixels}){
     const now=Date.now();if(now-(attempts.get(token)??0)<3000)return reply(429,{error:'RATE_LIMIT'});
     if(sessions.size>=8&&!sessions.has(token))return reply(429,{error:'CAPACITY'});
     attempts.set(token,now);if(sessions.has(token))stop(sessions.get(token));
-    const s={username:name,asyncPortraits:input.protocol===2,gacha:input.gacha===true,follow:input.follow===true,queue:new SessionQueue(),likes:new LikeCounter(),gifts:new GiftCounter(),profiles:new Map(),received:new Set(),observedGifts:new Map(),processing:0,unmapped:0,imageSkipped:0,lastPoll:now,retries:0,closed:false};sessions.set(token,s);start(s);
-    return reply(202,{status:s.status,username:name,capabilities:{asyncPortraits:s.asyncPortraits,gacha:s.gacha,follow:s.follow}});
+    const s={username:name,asyncPortraits:input.protocol===2,gacha:input.gacha===true,follow:input.follow===true,rawLikes:input.rawLikes===true,queue:new SessionQueue(),likes:new LikeCounter({raw:input.rawLikes===true}),gifts:new GiftCounter(),profiles:new Map(),received:new Set(),observedGifts:new Map(),processing:0,unmapped:0,imageSkipped:0,lastPoll:now,retries:0,closed:false};sessions.set(token,s);start(s);
+    return reply(202,{status:s.status,username:name,capabilities:{asyncPortraits:s.asyncPortraits,gacha:s.gacha,follow:s.follow,rawLikes:s.rawLikes}});
    }
    if(url.pathname==='/disconnect'&&req.method==='POST'){const s=sessions.get(token);if(s)stop(s);sessions.delete(token);return reply(200,{status:'DISCONNECTED'});}
    if(url.pathname==='/session/events'&&req.method==='GET'){

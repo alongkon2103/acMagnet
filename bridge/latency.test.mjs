@@ -4,7 +4,7 @@ import {EventEmitter} from 'node:events';
 import {createBridge} from './http.mjs';
 import {giftMap} from './gifts.mjs';
 
-async function setup(t,pixels=async()=>null,protocol=2,gacha=true,follow=true){
+async function setup(t,pixels=async()=>null,protocol=2,gacha=true,follow=true,rawLikes=false){
  let connection;
  const headers={'x-magnet-key':'test-key-that-is-at-least-32-characters','x-magnet-session':'latency-test-session-aaaaaaaaaaaaaaa','content-type':'application/json'};
  const app=createBridge({key:headers['x-magnet-key'],giftMap,connect:()=>{
@@ -12,7 +12,7 @@ async function setup(t,pixels=async()=>null,protocol=2,gacha=true,follow=true){
  },pixels});
  await new Promise(r=>app.server.listen(0,'127.0.0.1',r));t.after(()=>app.close());
  const base='http://127.0.0.1:'+app.server.address().port;
- const start=await(await fetch(base+'/connect',{method:'POST',headers,body:JSON.stringify({username:'host',...(protocol?{protocol}:{}),...(gacha?{gacha:true}:{}),...(follow?{follow:true}:{})})})).json();
+ const start=await(await fetch(base+'/connect',{method:'POST',headers,body:JSON.stringify({username:'host',...(protocol?{protocol}:{}),...(gacha?{gacha:true}:{}),...(follow?{follow:true}:{}),rawLikes})})).json();
  return {connection,capabilities:start.capabilities,read:async(after=0)=>(await fetch(base+'/session/events?after='+after,{headers})).json()};
 }
 const gift=(id,msg,extra={})=>({giftId:id,common:{msgId:msg},repeatCount:1,user:{displayId:'viewer',avatarThumb:{urlList:['https://p16.tiktokcdn.com/a.webp']}},...extra});
@@ -120,7 +120,7 @@ test('older game sessions skip unsupported gacha gifts and continue receiving no
 test('follow grants one profile-linked receipt immediately and keeps platform IDs as strings',async t=>{
  let finish;
  const {connection,read,capabilities}=await setup(t,()=>new Promise(r=>finish=r));
- assert.deepEqual(capabilities,{asyncPortraits:true,gacha:true,follow:true});
+ assert.deepEqual(capabilities,{asyncPortraits:true,gacha:true,follow:true,rawLikes:false});
  const raw={common:{msgId:'follow-9223372036854775801'},user:{id:'9223372036854775801',displayId:'new_follower',avatarThumb:{urlList:['https://p16.tiktokcdn.com/follow.webp']}}};
  connection.emit('follow',raw);connection.emit('follow',raw);
  const first=await read();
@@ -138,4 +138,15 @@ test('legacy sessions never receive unsupported follow actions',async t=>{
  connection.emit('follow',{common:{msgId:'legacy-follow'},user:{id:'123456',displayId:'follower'}});
  connection.emit('gift',gift(5655,'after-follow'));
  assert.deepEqual((await read()).events.filter(e=>e.giftId).map(e=>e.giftId),['Rose']);
+});
+test('raw-like capability delivers sub-threshold counts and deduplicates without delaying gifts',async t=>{
+ const {connection,read,capabilities}=await setup(t,async()=>null,2,true,true,true);
+ assert.equal(capabilities.rawLikes,true);
+ const like={common:{msgId:'raw-like'},count:149,total:999999,user:{displayId:'liker'}};
+ connection.emit('like',like);connection.emit('like',like);
+ connection.emit('like',{...like,common:{msgId:'raw-like-2'},count:1});
+ connection.emit('gift',gift(5655,'after-raw-like'));
+ const data=await read();
+ assert.deepEqual(data.events.filter(e=>e.giftId==='Likes').map(e=>e.rawLikeCount),[149,1]);
+ assert.equal(data.events.at(-1).giftId,'Rose');
 });

@@ -11,6 +11,15 @@ local portraits = kit:WaitForChild("LivePortraits")
 local gateway = ServerScriptService:WaitForChild("BlackHoleServer"):WaitForChild("SubmitGift")
 local token, generation, cursor, owner = nil, 0, 0, nil
 local busy, cooldown = false, {}
+local LikeCounter=require(ServerScriptService:WaitForChild("LikeRewardCounter"))
+local likeCounter=LikeCounter.new(require(kit.Config).LikesPerReward)
+local function publishLikes()
+ live:SetAttribute("LikeRewardsEnabled",require(kit.Config).LikeRewardsEnabled)
+ live:SetAttribute("LikeCounterStatus",likeCounter.status)
+ live:SetAttribute("LikeProgress",likeCounter.remainder)
+ live:SetAttribute("LikesPerReward",require(kit.Config).LikesPerReward)
+end
+publishLikes()
 local followGuard = require(ServerScriptService:WaitForChild("FollowRewardGuard")).new(
  function(channel) return game:GetService("DataStoreService"):GetDataStore("TikTokFollowRewards_v1", channel) end,
  function() return Http:GenerateGUID(false) end)
@@ -19,19 +28,19 @@ local function isFollow(e)
  return kind=="follow" or kind=="follows"
 end
 local function followIdentity(sender)
+ -- Numeric platform IDs must arrive as strings to preserve TikTok's 64-bit precision.
  local id=sender.userId or sender.id
  if type(id)=="string" and id:match("^%d+$") and #id<=40 then return "uid:"..id end
- local name=sender.uniqueId or sender.username
- if type(name)=="string"then
-  name=name:lower():gsub("^@","")
-  if #name>0 and #name<=24 and name:match("^[%w_%.]+$")then return "user:"..name end
+ local username=sender.uniqueId or sender.username
+ if type(username)=="string" then
+  username=username:lower():gsub("^@","")
+  if #username>0 and #username<=24 and username:match("^[%w_%.]+$") then return "user:"..username end
  end
  return nil
 end
 local function operator(player)
-    return RunService:IsStudio() or table.find(config.OperatorUserIds, player.UserId) ~= nil
-        or (game.CreatorType == Enum.CreatorType.User and player.UserId == game.CreatorId)
-        or (game.PrivateServerOwnerId ~= 0 and player.UserId == game.PrivateServerOwnerId)
+    -- LIVE is available to every player in this server.
+    return player ~= nil and player.Parent == Players
 end
 local function status(value) live:SetAttribute("Status", value) end
 local function request(method, path, body, session)
@@ -45,6 +54,7 @@ local function disconnect()
     generation += 1
     local previous=token
     token=nil; owner=nil; busy=false
+    likeCounter=LikeCounter.new(require(kit.Config).LikesPerReward);publishLikes()
     status("DISCONNECTED");live:SetAttribute("Username", "")
     if previous then task.spawn(function() pcall(request,"POST","/disconnect",{},previous) end) end
 end
@@ -71,10 +81,24 @@ local receiptProgress
 local function process(e, playerId, session, version)
     if type(e)~="table" or type(e.id)~="string" or #e.id>140 or type(e.sender)~="table" then return false,"invalid_event" end
     if e.kind=="Portrait" then portrait(e.sender);return true end
+    if require(kit.Config).LikeRewardsEnabled==false then
+        for _,field in ipairs({"giftId","type","kind","event"})do
+            local value=tostring(e[field] or ""):lower()
+            if value=="like" or value=="likes" then
+                live:SetAttribute("LikeRewardsEnabled",false)
+                return true,"likes_disabled"
+            end
+        end
+    end
+
+    local liking=LikeCounter.IsLike(e)
     local following=isFollow(e)
-    if not following and (type(e.quantity)~="number" or e.quantity%1~=0 or e.quantity<1 or e.quantity>10000) then return false,"invalid_quantity" end
+    if not following and not liking and (type(e.quantity)~="number" or e.quantity%1~=0 or e.quantity<1 or e.quantity>10000) then return false,"invalid_quantity" end
     local identity=following and followIdentity(e.sender)
-    if following and not identity then return true,"ignored_invalid_follow" end
+    if following and not identity then
+        live:SetAttribute("LastIssue","follow_missing_account_id")
+        return true,"ignored_invalid_follow"
+    end
     local name=tostring(e.sender.name or "viewer")
     if #name>160 then name="viewer" end
     if not RunService:IsStudio() then
@@ -86,9 +110,18 @@ local function process(e, playerId, session, version)
     if following then
         local channel=live:GetAttribute("Username")
         return followGuard(channel,identity,function()
-            if token~=session or generation~=version then return false,"cancelled"end
+            if token~=session or generation~=version then return false,"cancelled" end
             return gateway:Invoke("Follow",sender,1,"follow:"..channel..":"..identity)
         end)
+    end
+    if liking then
+        local counter=likeCounter
+        local ok,reason=counter:Process(e,function(quantity,receipt)
+            if token~=session or generation~=version then return false,"cancelled"end
+            return gateway:Invoke("Likes",sender,quantity,receipt,playerId)
+        end)
+        if counter==likeCounter then publishLikes()end
+        return ok,reason
     end
     -- Resume the failed chunk even if a long queue outlives gateway dedup retention.
     local progress=receiptProgress
@@ -111,6 +144,7 @@ local function process(e, playerId, session, version)
 end
 control.OnServerEvent:Connect(function(player,action,input)
     if not operator(player) then return end
+    if owner and owner~=player.UserId then return end
     local now=os.clock()
     if now-(cooldown[player] or -10)<3 then return end
     cooldown[player]=now
@@ -120,11 +154,12 @@ control.OnServerEvent:Connect(function(player,action,input)
     local name=string.lower(string.gsub(string.gsub(input,"^%s*(.-)%s*$","%1"),"^@",""))
     if #name<1 or #name>24 or not name:match("^[%w_][%w_%.]*$") then status("INVALID_USERNAME");return end
     if not config.BridgeUrl:match("^https://") or #config.BridgeKey<32 then status("SETUP_REQUIRED");return end
+    require(ServerScriptService:WaitForChild("WinProfile")).SetChannel(player,name)
     disconnect();busy=true;owner=player.UserId;token=Http:GenerateGUID(false);cursor=0
     local session,version=token,generation
     status("CONNECTING");live:SetAttribute("Username",name)
     task.spawn(function()
-        local ok=pcall(request,"POST","/connect",{username=name,protocol=2,gacha=true,follow=true},session)
+        local ok=pcall(request,"POST","/connect",{username=name,protocol=2,gacha=true,follow=true,rawLikes=true},session)
         if version~=generation then pcall(request,"POST","/disconnect",{},session);return end
         busy=false
         if not ok then status("ERROR");token=nil;return end

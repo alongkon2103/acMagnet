@@ -16,7 +16,7 @@ test('authenticated sessions isolate events, replay and disconnect',async(t)=>{
  const response=await (await fetch(base+'/session/events?after=0',{headers})).json();
  assert.equal(response.status,'LIVE');assert.equal(response.events[0].quantity,2);
  assert.equal(response.events[1].kind,'Portrait');assert.equal(response.events[1].sender.pixels.length,256);
- connections[0].emit('like',{common:{msgId:'like1'},count:49,user:{displayId:'liker',avatarThumb:{urlList:['https://p16.tiktokcdn.com/thumb.webp']}}});
+ connections[0].emit('like',{common:{msgId:'like1'},count:149,user:{displayId:'liker',avatarThumb:{urlList:['https://p16.tiktokcdn.com/thumb.webp']}}});
  connections[0].emit('like',{common:{msgId:'like2'},count:1,user:{displayId:'liker',avatarThumb:{urlList:['https://p16.tiktokcdn.com/thumb.webp']}}});
  await new Promise(r=>setTimeout(r,10));
  const likes=await(await fetch(base+'/session/events?after='+response.cursor,{headers})).json();
