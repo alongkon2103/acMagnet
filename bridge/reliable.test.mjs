@@ -42,6 +42,18 @@ test('reliable mode retains a paid gift through6000 events and only deletes expl
  assert.equal((await s.request('/session/events')).pending,5999);
 });
 
+test('native reliable polling accepts Roblox-compatible JSON acknowledgments',async t=>{
+ const s=await server(t);await s.request('/connect',{method:'POST',body:JSON.stringify({username:'host',protocol:2,reliable:true})});
+ s.connection.emit('gift',gift(5655,'json-ack',10));
+ const page=await s.request('/session/events?limit=100&waitMs=0',{method:'POST',body:JSON.stringify({acks:[]})});
+ assert.equal(page.events[0].quantity,10);
+ const ack={method:'POST',body:JSON.stringify({acks:page.events.map(e=>e.seq)})};
+ assert.equal((await s.request('/session/events?limit=100',ack)).pending,0);
+ assert.equal((await s.request('/session/events',ack)).pending,0);
+ assert.equal((await s.request('/session/events',{method:'POST',body:JSON.stringify({acks:'[1]'})})).error,'INVALID_ACK');
+ assert.equal((await s.request('/session/events',{method:'POST',body:JSON.stringify({acks:[],owner:'123'})})).error,'INVALID_REQUEST');
+});
+
 test('a backpressured page cannot hide a later same-priority reward and urgent controls remain first',async t=>{
  const s=await server(t);
  await s.request('/connect',{method:'POST',body:JSON.stringify({username:'host',protocol:2,reliable:true})});

@@ -4,9 +4,11 @@ import {username,GiftCounter,normalizeFollow,SessionQueue} from './core.mjs';
 import {avatarPixels} from './avatar.mjs';
 import {LikeCounter} from './likes.mjs';
 import {DeliveryStore} from './delivery.mjs';
-export function createBridge({key,giftMap,connect,pixels=avatarPixels,databasePath,deliveryStore}){
+import {TikkiesBridge} from './tikkies.mjs';
+export function createBridge({key,giftMap,connect,pixels=avatarPixels,databasePath,deliveryStore,tikkiesKey,tikkiesDatabasePath,tikkiesOptions}){
  if(typeof key!=='string'||key.length<32)throw new Error('MAGNET_KEY must contain at least 32 characters');
  const sessions=new Map();const attempts=new Map();let storage=deliveryStore??(databasePath?new DeliveryStore(databasePath):null);
+ const tikkies=tikkiesKey?new TikkiesBridge({...tikkiesOptions,key:tikkiesKey,mapKey:key,pixels,databasePath:tikkiesDatabasePath??(databasePath&&databasePath!==':memory:'?databasePath+'.tikkies':':memory:')}):null;
  const idleMs=120000,retentionMs=24*60*60*1000;
  const stop=(s,remove=false)=>{s.closed=true;s.queue.wake?.();clearTimeout(s.timer);clearTimeout(s.connectTimer);clearTimeout(s.writeTimer);try{s.connection?.disconnect();}catch{};if(remove&&s.reliable)storage.remove(s.token);};
  const finish=s=>{if(s.ending){s.status=s.processing||s.failedWrites.size?'DRAINING':s.ending;s.queue.wake?.();}};
@@ -86,6 +88,7 @@ export function createBridge({key,giftMap,connect,pixels=avatarPixels,databasePa
   try{
    const url=new URL(req.url,'http://localhost');
    if(url.pathname==='/health'&&req.method==='GET')return reply(200,{ok:true});
+   if(url.pathname.startsWith('/tikkies/')){if(!tikkies)return reply(404,{error:'NOT_FOUND'});return await tikkies.handle(req,url,reply);}
    const supplied=Buffer.from(String(req.headers['x-magnet-key']??''));const expected=Buffer.from(key);
    if(supplied.length!==expected.length||!timingSafeEqual(supplied,expected))return reply(401,{error:'Unauthorized'});
    const token=req.headers['x-magnet-session'];if(typeof token!=='string'||!/^[a-zA-Z0-9-]{32,100}$/.test(token))return reply(400,{error:'INVALID_SESSION'});
@@ -102,7 +105,14 @@ export function createBridge({key,giftMap,connect,pixels=avatarPixels,databasePa
     return reply(202,{status:s.status,username:name,capabilities:{asyncPortraits:s.asyncPortraits,gacha:s.gacha,follow:s.follow,rawLikes:s.rawLikes,reliable:s.reliable}});
    }
    if(url.pathname==='/disconnect'&&req.method==='POST'){const s=sessions.get(token);if(s)stop(s,true);else storage?.remove(token);sessions.delete(token);return reply(200,{status:'DISCONNECTED'});}
-   if(url.pathname==='/session/events'&&req.method==='GET'){
+   if(url.pathname==='/session/events'&&['GET','POST'].includes(req.method)){
+    let jsonAcks;
+    if(req.method==='POST'){
+     let body='';for await(const chunk of req){body+=chunk;if(body.length>4096)return reply(413,{error:'BODY_TOO_LARGE'});}
+     const input=JSON.parse(body);
+     if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(k=>k!=='acks'))return reply(400,{error:'INVALID_REQUEST'});
+     jsonAcks=input.acks===undefined?[]:input.acks;
+    }
     const after=Number(url.searchParams.get('after')??0);if(!Number.isSafeInteger(after)||after<0)return reply(400,{error:'INVALID_CURSOR'});
     let s=sessions.get(token);
     if(!s){
@@ -117,7 +127,7 @@ export function createBridge({key,giftMap,connect,pixels=avatarPixels,databasePa
     let limit=20;
     if(s.reliable){
      limit=Math.min(100,Math.max(1,Number(url.searchParams.get('limit')??100)));if(!Number.isSafeInteger(limit))return reply(400,{error:'INVALID_LIMIT'});
-     const acks=JSON.parse(String(req.headers['x-magnet-ack']??'[]'));
+     const acks=req.method==='POST'?jsonAcks:JSON.parse(String(req.headers['x-magnet-ack']??'[]'));
      if(!Array.isArray(acks)||acks.length>100||acks.some(n=>!Number.isSafeInteger(n)||n<1||n>s.queue.seq))return reply(400,{error:'INVALID_ACK'});
      s.queue.ack(acks);
     }
@@ -138,5 +148,5 @@ export function createBridge({key,giftMap,connect,pixels=avatarPixels,databasePa
   try{for(const old of storage?.recover()??[])if(Date.now()-old.lastPoll>retentionMs)storage.remove(old.token);storage?.prune();}catch{/* A temporary storage fault must not terminate the bridge. */}
  },30000);sweep.unref();
  let closing;
- return {server,close(){if(closing)return closing;clearInterval(sweep);for(const s of sessions.values())stop(s);closing=new Promise(resolve=>server.close(()=>{storage?.close();resolve();}));return closing;}};
+ return {server,close(){if(closing)return closing;clearInterval(sweep);tikkies?.close();for(const s of sessions.values())stop(s);closing=new Promise(resolve=>server.close(()=>{storage?.close();resolve();}));return closing;}};
 }

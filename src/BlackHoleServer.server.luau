@@ -294,6 +294,37 @@ local gateway = Instance.new("BindableFunction")
 gateway.Name = "SubmitGift"
 gateway.Parent = script
 gateway.OnInvoke = accept
+-- TIKKIES_GAME_GATEWAYS_V1_BEGIN
+local tikkiesHelpGacha=Instance.new("BindableFunction")
+tikkiesHelpGacha.Name="TikkiesHelpGacha";tikkiesHelpGacha.Parent=script
+tikkiesHelpGacha.OnInvoke=function(sender,quantity,eventId,requesterUserId)
+ local player=type(requesterUserId)=="number"and Players:GetPlayerByUserId(requesterUserId)or nil
+ if not player then return false,"owner_unavailable"end
+ if type(quantity)~="number"or quantity~=quantity or quantity%1~=0 or quantity<1 or quantity>100 then return false,"invalid_quantity"end
+ if type(eventId)~="string"or #eventId<1 or #eventId>160 then return false,"invalid_event_id"end
+ if seen[eventId]then return false,"duplicate"end
+ if type(sender)~="table"or type(sender.name)~="string"or #sender.name>160 then return false,"invalid_sender"end
+ local clean={name=sender.name,seed=tonumber(sender.seed)or 1,blockScale=1}
+ if clean.seed~=clean.seed or math.abs(clean.seed)>2147483646 then clean.seed=1 end
+ if type(sender.avatarId)=="string"and((#sender.avatarId==33 and sender.avatarId:match("^p%x+$"))or kit.LivePortraits:FindFirstChild(sender.avatarId))then clean.avatarId=sender.avatarId end
+ if type(sender.nameId)=="string"and kit.LiveNames:FindFirstChild(sender.nameId)then clean.nameId=sender.nameId end
+ local ok,reason=gachaQueue.Submit(player,"Help",clean,quantity,{paid=true,giftId="HelpGacha"})
+ if not ok then return false,reason end
+ seen[eventId]=workspace:GetServerTimeNow();sync();return true
+end
+local tikkiesWinAdjustment=Instance.new("BindableFunction")
+tikkiesWinAdjustment.Name="TikkiesWinAdjustment";tikkiesWinAdjustment.Parent=script
+tikkiesWinAdjustment.OnInvoke=function(player,delta,eventId)
+ if not player or player.Parent~=Players then return false,"owner_unavailable"end
+ if delta~=1 and delta~=-1 then return false,"invalid_quantity"end
+ if type(eventId)~="string"or #eventId<1 or #eventId>160 then return false,"invalid_event_id"end
+ if seen[eventId]then return false,"duplicate"end
+ table.insert(winQueue,{player=player,delta=delta})
+ state:SetAttribute("WinAdjustmentQueue",#winQueue)
+ seen[eventId]=workspace:GetServerTimeNow();playWinQueue();return true
+end
+-- TIKKIES_GAME_GATEWAYS_V1_END
+
 snapshot.OnServerInvoke = function(player)
     local list = {}
     for _,block in active do table.insert(list, block) end

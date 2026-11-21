@@ -11,6 +11,7 @@ local nameCache=require(ServerScriptService:WaitForChild("LiveNameCache")).new({
 local DeliveryPump=require(ServerScriptService:WaitForChild("LiveDeliveryPump"))
 local gateway = ServerScriptService:WaitForChild("BlackHoleServer"):WaitForChild("SubmitGift")
 local token, generation, cursor, owner = nil, 0, 0, nil
+local tikkiesExternal=nil -- TIKKIES_OWNERSHIP_V1
 local busy, cooldown = false, {}
 local LikeCounter=require(ServerScriptService:WaitForChild("LikeRewardCounter"))
 local likeCounter=LikeCounter.new(require(kit.Config).LikesPerReward)
@@ -45,15 +46,18 @@ local function operator(player)
 end
 local function status(value) live:SetAttribute("Status", value) end
 local function request(method, path, body, session, acks)
+    -- TIKKIES_NATIVE_POST_V1: Roblox rejects JSON array punctuation in header values.
+    if method=="GET" and type(acks)=="table" then method="POST";body={acks=acks}end
     local response = Http:RequestAsync({Url=config.BridgeUrl..path, Method=method,
-        Headers={["X-Magnet-Key"]=config.BridgeKey,["X-Magnet-Session"]=session,["Content-Type"]="application/json",["X-Magnet-Ack"]=acks and #acks>0 and Http:JSONEncode(acks)or nil},
+        Headers={["X-Magnet-Key"]=config.BridgeKey,["X-Magnet-Session"]=session,["Content-Type"]="application/json"},
         Body=method=="POST" and Http:JSONEncode(body or {}) or nil})
     if not response.Success then error("HTTP_"..response.StatusCode) end
     return Http:JSONDecode(response.Body)
 end
 local function disconnect()
     generation += 1
-    local previous=token
+    local previous=tikkiesExternal==nil and token or nil
+    tikkiesExternal=nil;live:SetAttribute("Transport",nil)
     token=nil; owner=nil; busy=false
     likeCounter=LikeCounter.new(require(kit.Config).LikesPerReward);publishLikes()
     status("DISCONNECTED");live:SetAttribute("Username", "")
@@ -143,7 +147,72 @@ local function process(e, playerId, session, version)
     if receiptProgress[e.id]==progress then receiptProgress[e.id]=nil end
     return true
 end
+-- TIKKIES_GATEWAY_V3_BEGIN
+local tikkiesDispatch=require(ServerScriptService:WaitForChild("TikkiesDispatch")).new({
+ valid=function(playerId,session)
+  return tikkiesExternal~=nil and tikkiesExternal.session==session and token==session
+   and generation==tikkiesExternal.version and owner==playerId and Players:GetPlayerByUserId(playerId)~=nil
+ end,
+ sender=filteredSender,
+ process=function(e,playerId,session)
+  local context=tikkiesExternal
+  if not context or context.session~=session then return false,"cancelled"end
+  return process(e,playerId,session,context.version)
+ end,
+ gift=function(effect,sender,amount,receipt,playerId)return gateway:Invoke(effect,sender,amount,receipt,playerId)end,
+ helper=function(effect,playerId,sender,amount,receipt)
+  local player=Players:GetPlayerByUserId(playerId)
+  if not player then return false,"owner_unavailable"end
+  local native=ServerScriptService:WaitForChild("BlackHoleServer")
+  if effect=="HelpGacha"then return native:WaitForChild("TikkiesHelpGacha"):Invoke(sender,amount,receipt,playerId)
+  elseif effect=="WinAdd"or effect=="WinRemove"then
+   return native:WaitForChild("TikkiesWinAdjustment"):Invoke(player,effect=="WinAdd"and 1 or -1,receipt)
+  elseif effect=="Shrink"then return ServerScriptService:WaitForChild("ArenaSettings"):WaitForChild("Shrink"):Invoke(player)
+  else return ServerScriptService:WaitForChild("HelperQueue"):WaitForChild("Enqueue"):Invoke(player,effect)end
+ end,
+ yield=function()task.wait()end,
+})
+local tikkiesGateway=Instance.new("BindableFunction")
+tikkiesGateway.Name="TikkiesGateway";tikkiesGateway.Parent=script
+tikkiesGateway.OnInvoke=function(action,a,b,c,d)
+ if action=="status"then return {nativeBusy=token~=nil and tikkiesExternal==nil,external=tikkiesExternal~=nil}end
+ if action=="begin"then
+  local playerId=type(a)=="string"and a:match("^%d+$")and tonumber(a)or nil
+  local player=playerId and Players:GetPlayerByUserId(playerId)
+  if not player or type(b)~="string"or #b<1 or #b>24 or not b:match("^[%w_][%w_%.]*$")
+   or type(c)~="string"or #c<1 or #c>120 or type(d)~="string"or #d~=36 then return false,"invalid_binding"end
+  if tikkiesExternal then
+   return tikkiesExternal.session==c and owner==playerId and tikkiesExternal.namespace==d,"room_busy"
+  end
+  if token or busy then return false,"native_busy"end
+  disconnect()
+  owner=playerId;token=c
+  tikkiesExternal={session=c,version=generation,namespace=d}
+  live:SetAttribute("Transport","Tikkies");live:SetAttribute("Username",b);status("LIVE")
+  return true
+ elseif action=="submit"then
+  local context=tikkiesExternal
+  if not context or context.session~=a or token~=a or generation~=context.version then return false,"cancelled"end
+  if not owner or not Players:GetPlayerByUserId(owner)then return false,"owner_unavailable"end
+  if type(b)~="table"or type(b.id)~="string"or type(b.sender)~="table"then return false,"invalid_event"end
+  local e=table.clone(b)
+  if e.kind=="Portrait"then e.id=context.namespace..":portrait:"..tostring(e.sender.portraitId)
+  else
+   if #e.id<1 or #e.id>100 then return false,"invalid_event_id"end
+   -- Binding UUID36 + colon + external ID100 fits native processor's 140-byte bound.
+   e.id=context.namespace..":"..e.id
+  end
+  return tikkiesDispatch.Submit(e,owner,a)
+ elseif action=="end"then
+  if tikkiesExternal and tikkiesExternal.session==a then disconnect();return true end
+  return false,"cancelled"
+ end
+ return false,"invalid_action"
+end
+-- TIKKIES_GATEWAY_V3_END
+
 control.OnServerEvent:Connect(function(player,action,input)
+    if tikkiesExternal then return end -- Tikkies owns this shared arena lease.
     if not operator(player) then return end
     if owner and owner~=player.UserId then return end
     local now=os.clock()
@@ -158,6 +227,7 @@ control.OnServerEvent:Connect(function(player,action,input)
     require(ServerScriptService:WaitForChild("WinProfile")).SetChannel(player,name)
     disconnect();busy=true;owner=player.UserId;token=Http:GenerateGUID(false);cursor=0
     local session,version=token,generation
+    live:SetAttribute("Transport","Native")
     status("CONNECTING");live:SetAttribute("Username",name)
     task.spawn(function()
         local ok,connected=pcall(request,"POST","/connect",{username=name,protocol=2,gacha=true,follow=true,rawLikes=true,reliable=true},session)
@@ -219,5 +289,5 @@ end)
 Players.PlayerAdded:Connect(function(p) p:SetAttribute("CanControlTikTok",operator(p)) end)
 for _,p in Players:GetPlayers() do p:SetAttribute("CanControlTikTok",operator(p)) end
 Players.PlayerRemoving:Connect(function(p) cooldown[p]=nil;if owner==p.UserId then disconnect() end end)
-game:BindToClose(function() if token then pcall(request,"POST","/disconnect",{},token) end end)
+game:BindToClose(function() if token and not tikkiesExternal then pcall(request,"POST","/disconnect",{},token) end end)
 status("DISCONNECTED")
