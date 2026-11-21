@@ -23,6 +23,45 @@ Names and portraits follow the triggering viewer. The existing native block, gac
 
 The Studio installer supports dry run and creates script backups before changing narrow integration hooks. It preserves personal wins, the saved native TikTok username, existing clients and rendering modules. Never put credentials in replicated scripts.
 
+## Connecting another API game
+
+Configure the product in Aclassstore with API mode, protocol `roblox-interactive-v1`, its Roblox place IDs and optional universe ID. Add each case-sensitive API command in the product's event editor and publish its Actions. Commands must match `^[A-Za-z][A-Za-z0-9_.:-]{0,79}$`; adding a label or command in the shop does not create gameplay code. An empty command list is valid while a new game is being prepared.
+
+The authenticated admin connection setup supplies the product's map credential. Keep that plaintext credential only in the game's server-only configuration; do not put it in replicated scripts, client attributes, logs or source control. The shop derives a separate credential per product. The trusted Tikkies backend retrieves only its SHA-256 hash through the private entitled configuration endpoint and registers the current product configuration when binding. The bridge persists this registry so maps can authenticate after a relay restart. The first successful trusted bind must occur before a new map can register.
+
+Set these fields on the server-only `LiveConfig` table when using the standard receiver:
+
+```luau
+return {
+ BridgeUrl = "https://YOUR-RELAY-HOST", -- operator-managed relay
+ BridgeKey = "YOUR-PRODUCT-MAP-CREDENTIAL", -- admin setup, server only
+ TikkiesGameId = "YOUR-STORE-PRODUCT-ID",
+}
+```
+
+`TikkiesBridge.server.luau` passes `TikkiesGameId` to `TikkiesRoomClient.new({gameId=...})`. The room client adds `X-Tikkies-Game` to every room registration, JSON event poll and room leave. The request wrapper adds `X-Magnet-Key` and the server-generated `X-Magnet-Session`; the legacy header names remain the transport contract for every game. ACK arrays, binding UUID and generation stay in the JSON POST body because Roblox rejects `[` in custom header values. Omit `TikkiesGameId` only for the existing Magnet receiver.
+
+A developer must integrate `TikkiesRoomClient` and `LiveDeliveryPump` with the new game's actual server handlers once. The tracked `TikkiesBridge.server.luau` is Magnet's adapter: replace its `BlackHole.LiveState` diagnostics target and `TikTokBridge.TikkiesGateway` hook with that game's equivalents. Register handlers by the exact published command string (for example `handlers["Meteor.Burst:V2"]`), then have the hook support:
+
+- `status`: report whether the native connector is busy.
+- `begin(ownerRobloxId, channel, session, bindingId)`: verify the owner is present, reserve the game authority and return true only when ready.
+- `submit(session, event)`: reject stale sessions, dispatch `event.effect` to the registered handler, and handle `kind="Portrait"` through the game's portrait cache. Preserve `event.quantity` (1–10,000), sender identity, `test` and stable receipt IDs. Return true only after accepting the work durably enough for the game's delivery semantics; return false for temporary backpressure so the relay can retry.
+- `end(session)`: fence and release that session without clearing its accepted receipt history or another session's work.
+
+Namespace handler deduplication/progress by the stable binding ID and event ID, retaining it across transport generation changes on the same game server. Individual handlers must resume partial quantity batches without awarding already completed units twice. The shared pump handles bounded concurrency and only ACKs accepted submissions; it cannot supply a game's missing handlers. Magnet's existing `TikkiesDispatch` and gameplay handlers remain specific to Magnet.
+
+## Relay service contract and compatibility
+
+Every trusted `/tikkies/service/{bind,status,events,release}` POST includes `gameId` alongside its existing subject/binding scope. Bind additionally includes `game: {placeIds, universeId, commands, credentialHash}`. Place/universe IDs are positive decimal strings, `universeId` may be null, commands are unique exact identifiers, and `credentialHash` is a 64-character SHA-256 hex digest. It may be null only for legacy Magnet. These fields come from the authenticated shop endpoint, never from the desktop. Service responses and map responses omit configuration and credential hashes.
+
+An events POST may additionally include trusted `replayOnlyIds: string[]`, a unique subset of the batch's receipt IDs. The auth backend derives this list from its latest published command proof when an old outbox command has been removed. A listed ID succeeds only when its exact fingerprint already exists in that product's binding; it can never enqueue new work, including when the relay's cached catalog still contains the command. Conflicting payloads return `RECEIPT_CONFLICT`; missing receipts return `INVALID_EFFECT`. Map clients cannot supply this service-only field.
+
+Rooms, room ownership and account/channel bindings are scoped by product. A matching Roblox owner in another product's room cannot receive or reserve this product's queue, even when two products reuse the same room UUID. A configuration update immediately replaces that product's command membership and credential hash. Changing its place/universe identity disconnects the old registrations until their maps register against the new identity. Already accepted durable events remain available for replay. An exact stored receipt retry is still acknowledged after a command is removed; it enqueues nothing. A new receipt using the removed command is rejected, and a changed payload for the old receipt ID remains a conflict.
+
+Missing `gameId` or `X-Tikkies-Game` identifies only AC Magnet (`ce4eb329-7ae9-43d4-bf6a-cfde0fe3cee7`), seeded with its existing place `113965026399564`, universe `10775380860` and 17 commands. `MAGNET_KEY` continues to authenticate only this product; it cannot authenticate a new game. Existing callers may keep their legacy fields and GET polls. A new game's map key is checked against its registered hash and cannot register or poll another product.
+
+On first startup with a pre-product database, the relay migrates legacy room/binding scope to Magnet. SQLite requires a transactional parent-table rebuild to replace the old global uniqueness constraints; binding IDs, sequences, generations, event payloads, receipt fingerprints and portrait jobs are preserved, and child foreign keys are checked before committing. Retain a consistent backup before rollout. New schemas are intended for the upgraded relay; an old binary does not understand product scopes. The existing queue/portrait limits, test expiry, quantity handling and generation-fenced ACK rules still apply.
+
 ## Validation
 
 Run `npm test` for the bridge queue, isolation, limits, portraits and replay checks. Run the `tests/studio/tikkies-*-qa.luau` suites with the official Luau CLI and the Studio live QA against the target place. The Tikkies repository also contains `scripts/ac-magnet-e2e.cjs`, which drives the actual HTTP service with two isolated owners and rooms.

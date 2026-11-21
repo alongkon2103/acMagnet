@@ -1439,6 +1439,9 @@ function Client.SafeIssue(value)
  return "HTTP_REQUEST_FAILED"
 end
 function Client.new(options)
+ local gameId=options.gameId
+ assert(gameId==nil or type(gameId)=="string"and #gameId>0 and #gameId<=160 and gameId:match("^[%w_%-]+$"),"invalid_game_id")
+ local function headers()return gameId and {["X-Tikkies-Game"]=gameId}or {}end
  local binding,pump=nil,nil
  local lastRegistration,failures=nil,0
  local closed=false
@@ -1472,7 +1475,7 @@ function Client.new(options)
   local ok,data=pcall(function()
    local now=options.now()
    if not lastRegistration or now-lastRegistration>=8000 then
-    options.request("POST","/tikkies/room",{placeId=options.placeId,universeId=options.universeId,players=options.players(),nativeBusy=options.nativeBusy()}, {})
+    options.request("POST","/tikkies/room",{placeId=options.placeId,universeId=options.universeId,players=options.players(),nativeBusy=options.nativeBusy()}, headers())
     lastRegistration=now
    end
    local sentBinding,sentPump=binding,pump
@@ -1480,7 +1483,7 @@ function Client.new(options)
    local response=options.request("POST","/tikkies/events",{
     waitMs=1000,limit=100,
     acks=acks,binding=sentBinding and sentBinding.id,generation=sentBinding and sentBinding.generation,
-   },{})
+   },headers())
    assert(type(response)=="table","invalid_room_response")
    local nextBinding=response.binding
    if not validBinding(nextBinding)or not present(nextBinding.ownerRobloxId)then
@@ -1521,7 +1524,7 @@ function Client.new(options)
  function api.Close()
   if closed then return end
   closed=true;finish()
-  pcall(options.request,"POST","/tikkies/room/leave",{}, {})
+  pcall(options.request,"POST","/tikkies/room/leave",{},headers())
  end
  return api
 end
@@ -1539,8 +1542,9 @@ local hook=SSS:WaitForChild("TikTokBridge"):WaitForChild("TikkiesGateway")
 local roomId=Http:GenerateGUID(false)
 script:SetAttribute("RoomId",roomId) -- Server-only diagnostic; no authentication material.
 local running=true
-local function request(method,path,body,_metadata)
+local function request(method,path,body,metadata)
  local headers={["X-Magnet-Key"]=config.BridgeKey,["X-Magnet-Session"]=roomId,["Content-Type"]="application/json"}
+ if metadata and metadata["X-Tikkies-Game"]then headers["X-Tikkies-Game"]=metadata["X-Tikkies-Game"]end
  local called,response=pcall(Http.RequestAsync,Http,{Url=config.BridgeUrl..path,Method=method,Headers=headers,
   Body=method=="POST"and Http:JSONEncode(body or {})or nil})
  if not called then
@@ -1559,6 +1563,7 @@ local function request(method,path,body,_metadata)
 end
 local client=Client.new({
  now=function()return DateTime.now().UnixTimestampMillis end,
+ gameId=config.TikkiesGameId,
  placeId=game.PlaceId,universeId=game.GameId,
  players=function()
   local ids={};for _,player in ipairs(Players:GetPlayers())do table.insert(ids,tostring(player.UserId))end
@@ -1739,8 +1744,8 @@ local function canonical(source)return(source:gsub("\r\n","\n"))end
 local function hash(source)local h=0;for i=1,#source do h=(h*31+string.byte(source,i))%2147483647 end;return h end
 local definitions={
  {key="s0",name="TikkiesDispatch",class="ModuleScript",hash=328877201},
- {key="s1",name="TikkiesRoomClient",class="ModuleScript",hash=1034121520,previousHashes={4204728,369874353,17747929}},
- {key="s2",name="TikkiesBridge",class="Script",hash=416709790,previousHashes={1550812153,996429594,761194767}},
+ {key="s1",name="TikkiesRoomClient",class="ModuleScript",hash=245281344,previousHashes={1034121520,4204728,369874353,17747929}},
+ {key="s2",name="TikkiesBridge",class="Script",hash=1536681912,previousHashes={416709790,1550812153,996429594,761194767}},
  {key="s3",name="TikkiesPatches",class="ModuleScript",hash=2105567924,installerOnly=true},
 }
 local sources={}

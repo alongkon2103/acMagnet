@@ -9,8 +9,8 @@ local function canonical(source)return(source:gsub("\r\n","\n"))end
 local function hash(source)local h=0;for i=1,#source do h=(h*31+string.byte(source,i))%2147483647 end;return h end
 local definitions={
  {key="s0",name="TikkiesDispatch",class="ModuleScript",hash=328877201},
- {key="s1",name="TikkiesRoomClient",class="ModuleScript",hash=1034121520,previousHashes={4204728,369874353,17747929}},
- {key="s2",name="TikkiesBridge",class="Script",hash=416709790,previousHashes={1550812153,996429594,761194767}},
+ {key="s1",name="TikkiesRoomClient",class="ModuleScript",hash=245281344,previousHashes={1034121520,4204728,369874353,17747929}},
+ {key="s2",name="TikkiesBridge",class="Script",hash=1536681912,previousHashes={416709790,1550812153,996429594,761194767}},
  {key="s3",name="TikkiesPatches",class="ModuleScript",hash=2105567924,installerOnly=true},
 }
 local sources={}

@@ -54,4 +54,22 @@ for _,call in calls do
 end
 c.Close()
 assert(calls[#calls].path=="/tikkies/room/leave","Shutdown marks room offline without deleting pending work")
+local product="11111111-1111-4111-8111-111111111111"
+local productCalls={}
+local scoped=Client.new({
+ gameId=product,placeId=111111111111111,universeId=11111111111,
+ now=function()return 0 end,players=function()return {"42"}end,nativeBusy=function()return false end,
+ request=function(method,path,body,headers)
+  table.insert(productCalls,{method=method,path=path,body=body,headers=headers})
+  return {status="WAITING",events={}}
+ end,
+ hook=function()return true end,pump=function()error("No binding in product scope test")end,publish=function()end,
+})
+scoped.Step();scoped.Close()
+assert(#productCalls==3,"A scoped receiver registers, polls and leaves")
+for _,call in productCalls do
+ assert(call.headers["X-Tikkies-Game"]==product,"Every map request must identify its configured product")
+ for key,value in call.headers do assert(type(value)=="string"and not value:find("[",1,true),"Roblox restricted ACK arrays never enter HTTP headers")end
+end
+for _,call in calls do assert(call.headers["X-Tikkies-Game"]==nil,"Legacy Magnet omits product headers")end
 print("PASS Tikkies room client: binding, generation ACK fence, replay, owner departure, leave")

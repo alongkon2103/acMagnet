@@ -11,8 +11,9 @@ local hook=SSS:WaitForChild("TikTokBridge"):WaitForChild("TikkiesGateway")
 local roomId=Http:GenerateGUID(false)
 script:SetAttribute("RoomId",roomId) -- Server-only diagnostic; no authentication material.
 local running=true
-local function request(method,path,body,_metadata)
+local function request(method,path,body,metadata)
  local headers={["X-Magnet-Key"]=config.BridgeKey,["X-Magnet-Session"]=roomId,["Content-Type"]="application/json"}
+ if metadata and metadata["X-Tikkies-Game"]then headers["X-Tikkies-Game"]=metadata["X-Tikkies-Game"]end
  local called,response=pcall(Http.RequestAsync,Http,{Url=config.BridgeUrl..path,Method=method,Headers=headers,
   Body=method=="POST"and Http:JSONEncode(body or {})or nil})
  if not called then
@@ -31,6 +32,7 @@ local function request(method,path,body,_metadata)
 end
 local client=Client.new({
  now=function()return DateTime.now().UnixTimestampMillis end,
+ gameId=config.TikkiesGameId,
  placeId=game.PlaceId,universeId=game.GameId,
  players=function()
   local ids={};for _,player in ipairs(Players:GetPlayers())do table.insert(ids,tostring(player.UserId))end

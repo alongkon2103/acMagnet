@@ -24,6 +24,9 @@ function Client.SafeIssue(value)
  return "HTTP_REQUEST_FAILED"
 end
 function Client.new(options)
+ local gameId=options.gameId
+ assert(gameId==nil or type(gameId)=="string"and #gameId>0 and #gameId<=160 and gameId:match("^[%w_%-]+$"),"invalid_game_id")
+ local function headers()return gameId and {["X-Tikkies-Game"]=gameId}or {}end
  local binding,pump=nil,nil
  local lastRegistration,failures=nil,0
  local closed=false
@@ -57,7 +60,7 @@ function Client.new(options)
   local ok,data=pcall(function()
    local now=options.now()
    if not lastRegistration or now-lastRegistration>=8000 then
-    options.request("POST","/tikkies/room",{placeId=options.placeId,universeId=options.universeId,players=options.players(),nativeBusy=options.nativeBusy()}, {})
+    options.request("POST","/tikkies/room",{placeId=options.placeId,universeId=options.universeId,players=options.players(),nativeBusy=options.nativeBusy()}, headers())
     lastRegistration=now
    end
    local sentBinding,sentPump=binding,pump
@@ -65,7 +68,7 @@ function Client.new(options)
    local response=options.request("POST","/tikkies/events",{
     waitMs=1000,limit=100,
     acks=acks,binding=sentBinding and sentBinding.id,generation=sentBinding and sentBinding.generation,
-   },{})
+   },headers())
    assert(type(response)=="table","invalid_room_response")
    local nextBinding=response.binding
    if not validBinding(nextBinding)or not present(nextBinding.ownerRobloxId)then
@@ -106,7 +109,7 @@ function Client.new(options)
  function api.Close()
   if closed then return end
   closed=true;finish()
-  pcall(options.request,"POST","/tikkies/room/leave",{}, {})
+  pcall(options.request,"POST","/tikkies/room/leave",{},headers())
  end
  return api
 end

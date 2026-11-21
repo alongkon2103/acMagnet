@@ -5,6 +5,8 @@ import {tmpdir} from 'node:os';
 import {join,resolve,relative,isAbsolute} from 'node:path';
 import {createBridge} from './http.mjs';
 import {TikkiesBridge} from './tikkies.mjs';
+import {createHash} from 'node:crypto';
+import {DatabaseSync} from 'node:sqlite';
 
 const mapKey='map-test-key-at-least-32-characters-long';
 const serviceKey='service-test-key-at-least-32-characters';
@@ -13,6 +15,13 @@ const roomId='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const secondRoom='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const effects=['Rose','Roses','Friendship','Donut','Bear','HeartMe','GoatBusker','HelpGacha','Follow','Likes','Remove','Speed','Range','Storm','Shrink','WinAdd','WinRemove'];
 const effect=(id='action-1',extra={})=>({id,effect:'Rose',quantity:1,sender:{name:'Viewer',uniqueId:'viewer',userId:'9223372036854775801'},...extra});
+const magnetGame='ce4eb329-7ae9-43d4-bf6a-cfde0fe3cee7';
+const productA='11111111-1111-4111-8111-111111111111',productB='22222222-2222-4222-8222-222222222222';
+const credentialA='product-a-map-credential-at-least-32',credentialB='product-b-map-credential-at-least-32';
+const hash=value=>createHash('sha256').update(value).digest('hex');
+const gameA={placeIds:['111111111111111'],universeId:'11111111111',commands:['Meteor.Burst:V2','Shared'],credentialHash:hash(credentialA)};
+const gameB={placeIds:['222222222222222'],universeId:'22222222222',commands:['Boost-Up','Shared'],credentialHash:hash(credentialB)};
+const productHeaders=(gameId,key)=>({'x-tikkies-game':gameId,'x-magnet-key':key});
 const removeFixture=dir=>{const child=relative(resolve(tmpdir()),resolve(dir));assert.ok(!isAbsolute(child)&&!child.startsWith('..')&&child.startsWith('magnet-tikkies-'));rmSync(dir,{recursive:true,force:true});};
 
 async function fixture(t,options={}){
@@ -32,6 +41,128 @@ async function fixture(t,options={}){
  const send=(bindingId,events=[effect()],extra={})=>service('events',{subject,bindingId,events,...extra});
  return {app,request,service,map,room,bind,send,get connectors(){return connectors;}};
 }
+
+test('two products isolate credentials, rooms, bindings and exact published commands for the same owner',async t=>{
+ const f=await fixture(t);
+ const a=await f.bind({gameId:productA,game:gameA}),b=await f.bind({gameId:productB,game:gameB});
+ assert.equal(a.state,'waiting');assert.equal(b.state,'waiting');assert.notEqual(a.bindingId,b.bindingId);
+ const register=(id,key,game)=>f.map('/tikkies/room',{placeId:game.placeIds[0],universeId:game.universeId,players:[owner],nativeBusy:false},roomId,productHeaders(id,key));
+ assert.equal((await register(productA,credentialA,gameA)).status,200);
+ assert.equal((await f.service('status',{gameId:productB,subject,bindingId:b.bindingId})).state,'waiting','Another product room cannot even make this owner busy');
+ assert.equal((await register(productB,credentialB,gameB)).status,200,'Room IDs are scoped by product too');
+ for(const [id,key,game]of [[productA,credentialB,gameA],[productB,mapKey,gameB],[productA,mapKey,gameA]])assert.equal((await register(id,key,game)).status,401);
+ assert.equal((await register('unregistered-product',credentialA,gameA)).status,401);
+ assert.equal((await register(productA,credentialA,gameB)).status,400);
+ for(const action of ['status','release','events'])assert.equal((await f.service(action,{gameId:productB,subject,bindingId:a.bindingId,events:[effect()]})).status,404);
+ assert.equal((await f.service('status',{subject,bindingId:a.bindingId})).status,404,'Missing product scope is Magnet only');
+ for(const name of ['meteor.Burst:V2','Rose','Boost-Up'])assert.equal((await f.send(a.bindingId,[effect('bad-'+name,{effect:name})],{gameId:productA})).status,400);
+ assert.equal((await f.send(a.bindingId,[effect('a',{effect:'Meteor.Burst:V2',quantity:10000})],{gameId:productA})).enqueued,1);
+ assert.equal((await f.send(b.bindingId,[effect('b',{effect:'Boost-Up',quantity:20})],{gameId:productB})).enqueued,1);
+ const pageA=await f.map('/tikkies/events',{acks:[]},roomId,productHeaders(productA,credentialA));
+ const pageB=await f.map('/tikkies/events',{acks:[]},roomId,productHeaders(productB,credentialB));
+ assert.equal(pageA.binding.id,a.bindingId);assert.deepEqual(pageA.events.map(e=>[e.id,e.effect,e.quantity]),[['a','Meteor.Burst:V2',10000]]);
+ assert.equal(pageB.binding.id,b.bindingId);assert.deepEqual(pageB.events.map(e=>[e.id,e.effect,e.quantity]),[['b','Boost-Up',20]]);
+ const stale=await f.map('/tikkies/events',{acks:[pageA.events[0].seq],binding:pageA.binding.id,generation:pageA.binding.generation},roomId,productHeaders(productB,credentialB));
+ assert.equal(stale.status,409);assert.equal((await f.map('/tikkies/events',{acks:[]},roomId,productHeaders(productB,credentialB))).pending,1);
+ await f.map('/tikkies/room/leave',{},roomId,productHeaders(productA,credentialA));
+ assert.equal((await f.map('/tikkies/events',{acks:[]},roomId,productHeaders(productB,credentialB))).binding.id,b.bindingId,'Leaving one product cannot disconnect the other');
+});
+
+test('trusted bind strictly validates game identity, command identifiers and credential hashes before registration',async t=>{
+ const f=await fixture(t);
+ const invalid=[null,{}, {...gameA,placeIds:[]},{...gameA,placeIds:['01']},{...gameA,placeIds:[113965026399564]},
+  {...gameA,placeIds:['1','1']},{...gameA,universeId:'0'},{...gameA,commands:['bad command']},{...gameA,commands:['_bad']},
+  {...gameA,commands:['a'.repeat(81)]},{...gameA,commands:['Same','Same']},{...gameA,credentialHash:null},{...gameA,credentialHash:'not-a-hash'},
+  {...gameA,unexpected:'field'}];
+ for(const game of invalid){const result=await f.bind({gameId:productA,game});assert.equal(result.status,400,JSON.stringify(game));}
+ assert.equal((await f.bind({gameId:productA})).status,400,'New products cannot register without trusted configuration');
+ for(const gameId of ['',null,123,'bad game','x'.repeat(161)])assert.equal((await f.bind({gameId,game:gameA})).status,400);
+ assert.equal((await f.bind({game:gameA})).status,400,'A missing game ID cannot register another product as legacy Magnet');
+ const b=await f.bind({gameId:productA,game:{...gameA,universeId:null,commands:[]}});assert.equal(b.status,200,'A new API game may have no published commands');
+ assert.equal((await f.send(b.bindingId,[effect()],{gameId:productA})).status,400);
+ const legacy=await f.bind();assert.equal(legacy.status,200);await f.room();
+ assert.equal((await f.map('/tikkies/events',{acks:[]},roomId,productHeaders(magnetGame,mapKey))).status,200);
+});
+
+test('catalog edits preserve exact accepted retries and paid queues while rejecting new retired commands',async t=>{
+ const f=await fixture(t);const b=await f.bind({gameId:productA,game:gameA});
+ const paid=effect('before-edit',{effect:'Meteor.Burst:V2',quantity:51});
+ assert.equal((await f.send(b.bindingId,[paid],{gameId:productA})).enqueued,1);
+ await f.map('/tikkies/room',{placeId:gameA.placeIds[0],universeId:gameA.universeId,players:[owner],nativeBusy:false},roomId,productHeaders(productA,credentialA));
+ assert.equal((await f.service('status',{gameId:productA,subject,bindingId:b.bindingId})).state,'connected');
+ const edited=await f.bind({gameId:productA,game:{...gameA,commands:['Shared'],placeIds:['333333333333333']}});
+ assert.equal(edited.bindingId,b.bindingId);assert.equal(edited.pending,1);
+ assert.equal(edited.state,'waiting','A registered room with a retired place identity must lose its binding');
+ assert.equal((await f.map('/tikkies/events',{acks:[]},roomId,productHeaders(productA,credentialA))).status,409);
+ assert.equal((await f.send(b.bindingId,[paid],{gameId:productA})).enqueued,0,'An exact acknowledged intake retry cannot be stranded by later catalog edits');
+ assert.equal((await f.send(b.bindingId,[{...paid,id:'after-edit'}],{gameId:productA})).status,400);
+ assert.equal((await f.send(b.bindingId,[{...paid,quantity:52}],{gameId:productA})).status,409,'Receipt conflicts remain enforced for retired commands');
+ assert.equal((await f.map('/tikkies/room',{placeId:gameA.placeIds[0],universeId:gameA.universeId,players:[owner],nativeBusy:false},roomId,productHeaders(productA,credentialA))).status,400);
+ await f.map('/tikkies/room',{placeId:'333333333333333',universeId:gameA.universeId,players:[owner],nativeBusy:false},roomId,productHeaders(productA,credentialA));
+ const page=await f.map('/tikkies/events',{acks:[]},roomId,productHeaders(productA,credentialA));assert.equal(page.events[0].quantity,51);
+ for(const response of [b,edited,page])for(const secret of [credentialA,gameA.credentialHash])assert.equal(JSON.stringify(response).includes(secret),false,'Configuration credentials never enter service/map responses');
+});
+
+test('trusted replay-only IDs confirm only exact durable receipts even when relay catalog is stale',async t=>{
+ const f=await fixture(t);const b=await f.bind({gameId:productA,game:gameA});
+ const paid=effect('confirmed-before-removal',{effect:'Meteor.Burst:V2'});
+ assert.equal((await f.send(b.bindingId,[paid],{gameId:productA})).enqueued,1);
+ const exact=await f.send(b.bindingId,[paid],{gameId:productA,replayOnlyIds:[paid.id]});assert.equal(exact.enqueued,0);assert.deepEqual(exact.duplicates,[paid.id]);
+ const fresh={...paid,id:'not-persisted'};
+ assert.equal((await f.send(b.bindingId,[fresh],{gameId:productA,replayOnlyIds:[fresh.id]})).status,400,'Stale relay command membership cannot admit replay-only intake');
+ assert.equal((await f.send(b.bindingId,[{...paid,quantity:2}],{gameId:productA,replayOnlyIds:[paid.id]})).status,409);
+ const accepted=await f.send(b.bindingId,[paid,effect('current',{effect:'Shared'})],{gameId:productA,replayOnlyIds:[paid.id]});assert.equal(accepted.enqueued,1);
+ for(const replayOnlyIds of [null,{},'id',[paid.id,paid.id],['not-in-batch'],[1]])assert.equal((await f.send(b.bindingId,[paid],{gameId:productA,replayOnlyIds})).status,400);
+ assert.equal((await f.service('status',{gameId:productA,subject,bindingId:b.bindingId})).pending,2);
+});
+
+test('product registry and queues replay after restart with backpressure, profiles and fenced JSON ACKs',async t=>{
+ const dir=mkdtempSync(join(tmpdir(),'magnet-tikkies-products-'));const databasePath=join(dir,'queue.sqlite');let restarted;
+ const f=await fixture(t,{tikkiesDatabasePath:databasePath,tikkiesOptions:{maxPending:2},pixels:async()=>Array(1024).fill(0x112233)});
+ t.after(async()=>{await f.app.close();await restarted?.app.close();removeFixture(dir);});
+ const a=await f.bind({gameId:productA,game:gameA});
+ const input=effect('persisted',{effect:'Meteor.Burst:V2',quantity:9999,sender:{name:'Profile',uniqueId:'profile',avatarUrl:'https://p16.tiktokcdn.com/profile.webp'}});
+ assert.equal((await f.send(a.bindingId,[input],{gameId:productA})).status,200);
+ assert.equal((await f.send(a.bindingId,[effect('overflow',{effect:'Shared'})],{gameId:productA})).status,429);
+ await new Promise(resolve=>setTimeout(resolve,30));await f.app.close();
+ restarted=await fixture(t,{tikkiesDatabasePath:databasePath,tikkiesOptions:{maxPending:2},pixels:async()=>Array(1024).fill(0x112233)});
+ const registered=await restarted.map('/tikkies/room',{placeId:gameA.placeIds[0],universeId:gameA.universeId,players:[owner],nativeBusy:false},roomId,productHeaders(productA,credentialA));assert.equal(registered.status,200,'Persisted registry authenticates maps before the next bind');
+ const rebound=await restarted.bind({gameId:productA,game:gameA});assert.equal(rebound.bindingId,a.bindingId);
+ const page=await restarted.map('/tikkies/events',{acks:[]},roomId,productHeaders(productA,credentialA));
+ assert.equal(page.pending,2);assert.equal(page.events.find(e=>e.id==='persisted').quantity,9999);assert.ok(page.events.some(e=>e.kind==='Portrait'));
+ assert.equal((await restarted.send(a.bindingId,[input],{gameId:productA})).enqueued,0);
+ const ack={binding:a.bindingId,generation:page.binding.generation,acks:page.events.map(e=>e.seq)};
+ assert.equal((await restarted.map('/tikkies/events',{...ack,generation:ack.generation+1},roomId,productHeaders(productA,credentialA))).status,409);
+ assert.equal((await restarted.map('/tikkies/events',ack,roomId,productHeaders(productA,credentialA))).pending,0);
+ const rotated='product-a-rotated-map-credential-at-least-32';
+ assert.equal((await restarted.bind({gameId:productA,game:{...gameA,credentialHash:hash(rotated)}})).status,200);
+ assert.equal((await restarted.map('/tikkies/events',{acks:[]},roomId,productHeaders(productA,credentialA))).status,401);
+ assert.equal((await restarted.map('/tikkies/events',{acks:[]},roomId,productHeaders(productA,rotated))).status,200);
+});
+
+test('pre-product SQLite queues, receipt IDs and cached portraits migrate without losing replay',async t=>{
+ const dir=mkdtempSync(join(tmpdir(),'magnet-tikkies-legacy-'));const databasePath=join(dir,'queue.sqlite');
+ const legacyId='cccccccc-cccc-cccc-cccc-cccccccccccc',now=Date.now(),db=new DatabaseSync(databasePath);
+ const input=effect('old-paid',{quantity:777,sender:{name:'Legacy',uniqueId:'legacy',seed:7}});
+ const normalized={id:'old-paid',effect:'Rose',giftId:'Rose',quantity:777,sender:{name:'Legacy',uniqueId:'legacy',handle:'legacy',seed:7}};
+ db.exec(`CREATE TABLE tk_rooms(id TEXT PRIMARY KEY,players TEXT NOT NULL,native_busy INTEGER NOT NULL,online INTEGER NOT NULL,last_seen INTEGER NOT NULL);
+ CREATE TABLE tk_bindings(id TEXT PRIMARY KEY,subject TEXT NOT NULL,owner TEXT NOT NULL,channel TEXT NOT NULL,expires INTEGER NOT NULL,enabled INTEGER NOT NULL,room_id TEXT,generation INTEGER NOT NULL DEFAULT 0,seq INTEGER NOT NULL DEFAULT 0,expired_tests INTEGER NOT NULL DEFAULT 0,portrait_fallbacks INTEGER NOT NULL DEFAULT 0,created INTEGER NOT NULL,last_activity INTEGER NOT NULL DEFAULT 0,UNIQUE(subject,owner,channel));
+ CREATE UNIQUE INDEX tk_room_owner ON tk_bindings(room_id) WHERE room_id IS NOT NULL;
+ CREATE TABLE tk_events(binding TEXT NOT NULL REFERENCES tk_bindings(id),seq INTEGER NOT NULL,id TEXT NOT NULL,priority INTEGER NOT NULL,payload TEXT NOT NULL,received INTEGER NOT NULL,test_expires INTEGER,portrait_id TEXT,PRIMARY KEY(binding,seq),UNIQUE(binding,id));
+ CREATE TABLE tk_receipts(binding TEXT NOT NULL REFERENCES tk_bindings(id),id TEXT NOT NULL,fingerprint TEXT NOT NULL,PRIMARY KEY(binding,id));
+ CREATE TABLE tk_portraits(binding TEXT NOT NULL REFERENCES tk_bindings(id),id TEXT NOT NULL,url TEXT NOT NULL,pixels TEXT,next_attempt INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0,offered_generation INTEGER NOT NULL DEFAULT -1,created INTEGER NOT NULL,last_used INTEGER NOT NULL DEFAULT 0,test_until INTEGER,PRIMARY KEY(binding,id));`);
+ db.prepare('INSERT INTO tk_rooms VALUES(?,?,0,1,?)').run(roomId,JSON.stringify([owner]),now);
+ db.prepare('INSERT INTO tk_bindings VALUES(?,?,?,?,?,1,?,3,1,0,0,?,?)').run(legacyId,subject,owner,'host',now+40000,roomId,now,now);
+ db.prepare('INSERT INTO tk_events VALUES(?,1,?,1,?,?,NULL,NULL)').run(legacyId,'old-paid',JSON.stringify({...normalized,seq:1,receivedAt:now}),now);
+ db.prepare('INSERT INTO tk_receipts VALUES(?,?,?)').run(legacyId,'old-paid',hash(JSON.stringify({event:normalized,url:null})));
+ db.prepare('INSERT INTO tk_portraits(binding,id,url,pixels,created,last_used) VALUES(?,?,?,?,?,?)').run(legacyId,'p'+'1'.repeat(32),'https://p16.tiktokcdn.com/old.webp',JSON.stringify(Array(1024).fill(0x112233)),now,now);db.close();
+ const f=await fixture(t,{tikkiesDatabasePath:databasePath});t.after(()=>removeFixture(dir));await f.room();const rebound=await f.bind();assert.equal(rebound.bindingId,legacyId);
+ const page=await f.map('/tikkies/events',{acks:[]});assert.equal(page.events.find(e=>e.id==='old-paid').quantity,777);assert.ok(page.events.some(e=>e.kind==='Portrait'));assert.ok(page.binding.generation>3);
+ assert.equal((await f.send(legacyId,[input])).enqueued,0,'The old fingerprint survives migration');
+ const second=await f.bind({gameId:productA,game:gameA});assert.equal(second.status,200);assert.notEqual(second.bindingId,legacyId,'Old uniqueness must not prevent the same owner/channel in another product');
+ assert.equal((await f.map('/tikkies/events',{acks:[]},roomId)).binding.id,legacyId);
+ assert.equal((await f.map('/tikkies/events',{binding:legacyId,generation:page.binding.generation,acks:page.events.map(e=>e.seq)})).pending,0);
+});
 
 test('Roblox POST polls acknowledge through JSON without restricted header characters',async t=>{
  const f=await fixture(t);await f.room();const b=await f.bind();await f.send(b.bindingId,[effect('post-ack',{quantity:10})]);

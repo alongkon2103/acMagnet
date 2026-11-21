@@ -6,7 +6,10 @@ import {allowedAvatarUrl,avatarPixels} from './avatar.mjs';
 import {username} from './core.mjs';
 
 export const tikkiesEffects=Object.freeze(['Rose','Roses','Friendship','Donut','Bear','HeartMe','GoatBusker','HelpGacha','Follow','Likes','Remove','Speed','Range','Storm','Shrink','WinAdd','WinRemove']);
-const effectSet=new Set(tikkiesEffects);
+const magnetGameId='ce4eb329-7ae9-43d4-bf6a-cfde0fe3cee7';
+const commandId=value=>typeof value==='string'&&/^[A-Za-z][A-Za-z0-9_.:-]{0,79}$/.test(value);
+const gameId=value=>{if(value===undefined)return magnetGameId;if(typeof value!=='string'||!/^[-A-Za-z0-9_]{1,160}$/.test(value))fail('INVALID_GAME');return value;};
+const roomKey=(game,room)=>JSON.stringify([game,room]);
 const account=value=>typeof value==='string'&&/^[1-9]\d{0,19}$/.test(value);
 const sessionId=value=>typeof value==='string'&&/^[a-zA-Z0-9-]{32,100}$/.test(value);
 const priority=e=>e.kind==='Portrait'||['Friendship','Donut','Shrink','WinAdd','WinRemove'].includes(e.effect)?0:e.effect==='Likes'?3:e.effect==='Follow'?2:1;
@@ -18,7 +21,7 @@ function normalizeEvent(input,bindingId){
  if(!input||typeof input!=='object'||Array.isArray(input))fail('INVALID_EVENT');
  const {id,effect,quantity,sender,triggerType,test}=input;
  if(typeof id!=='string'||!/^[\x21-\x7e]{1,100}$/.test(id)||id.startsWith('portrait:'))fail('INVALID_RECEIPT');
- if(!effectSet.has(effect))fail('INVALID_EFFECT');
+ if(!commandId(effect))fail('INVALID_EFFECT');
  if(!Number.isSafeInteger(quantity)||quantity<1||quantity>10000)fail('INVALID_QUANTITY');
  if(!sender||typeof sender!=='object'||typeof sender.name!=='string'||!sender.name.trim()||Buffer.byteLength(sender.name)>160||/[\x00-\x1f\x7f]/.test(sender.name))fail('INVALID_SENDER');
  const clean={name:sender.name};
@@ -40,6 +43,18 @@ function normalizeEvent(input,bindingId){
  return {event,url,fingerprint};
 }
 
+function normalizeGame(input,id){
+ if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(k=>!['placeIds','universeId','commands','credentialHash'].includes(k)))fail('INVALID_GAME');
+ const {placeIds,universeId,commands,credentialHash}=input;
+ if(!Array.isArray(placeIds)||placeIds.length<1||placeIds.length>100||placeIds.some(v=>!account(v))||new Set(placeIds).size!==placeIds.length||
+  universeId!==null&&!account(universeId)||!Array.isArray(commands)||commands.length>1000||commands.some(v=>!commandId(v))||new Set(commands).size!==commands.length||
+  !(credentialHash===null&&id===magnetGameId)&&!(typeof credentialHash==='string'&&/^[a-fA-F0-9]{64}$/.test(credentialHash)))fail('INVALID_GAME');
+ return {placeIds,universeId,commands,credentialHash:credentialHash?.toLowerCase()??null};
+}
+
+const bindingTable=name=>`CREATE TABLE ${name}(id TEXT PRIMARY KEY,game_id TEXT NOT NULL DEFAULT '${magnetGameId}',subject TEXT NOT NULL,owner TEXT NOT NULL,channel TEXT NOT NULL,expires INTEGER NOT NULL,enabled INTEGER NOT NULL,room_id TEXT,generation INTEGER NOT NULL DEFAULT 0,seq INTEGER NOT NULL DEFAULT 0,expired_tests INTEGER NOT NULL DEFAULT 0,portrait_fallbacks INTEGER NOT NULL DEFAULT 0,created INTEGER NOT NULL,last_activity INTEGER NOT NULL DEFAULT 0,UNIQUE(game_id,subject,owner,channel))`;
+const roomTable=name=>`CREATE TABLE ${name}(id TEXT NOT NULL,game_id TEXT NOT NULL DEFAULT '${magnetGameId}',players TEXT NOT NULL,native_busy INTEGER NOT NULL,online INTEGER NOT NULL,last_seen INTEGER NOT NULL,PRIMARY KEY(game_id,id))`;
+
 /** Separate external transport: no native TikTok session or connector is created here. */
 export class TikkiesBridge{
  constructor({key,mapKey,databasePath=':memory:',pixels=avatarPixels,now=Date.now,maxPending=50000,maxTotalPending=200000,maxReceipts=250000,maxPortraits=256,maxBindings=512,maxRooms=512,roomTimeoutMs=30000}){
@@ -50,10 +65,9 @@ export class TikkiesBridge{
   if(databasePath!==':memory:')mkdirSync(dirname(databasePath),{recursive:true,mode:0o700});
   this.db=new DatabaseSync(databasePath);if(databasePath!==':memory:')chmodSync(databasePath,0o600);
   this.db.exec(`PRAGMA journal_mode=WAL;PRAGMA synchronous=FULL;PRAGMA foreign_keys=ON;
-   CREATE TABLE IF NOT EXISTS tk_rooms(id TEXT PRIMARY KEY,players TEXT NOT NULL,native_busy INTEGER NOT NULL,online INTEGER NOT NULL,last_seen INTEGER NOT NULL);
-   CREATE TABLE IF NOT EXISTS tk_bindings(id TEXT PRIMARY KEY,subject TEXT NOT NULL,owner TEXT NOT NULL,channel TEXT NOT NULL,expires INTEGER NOT NULL,enabled INTEGER NOT NULL,room_id TEXT,generation INTEGER NOT NULL DEFAULT 0,seq INTEGER NOT NULL DEFAULT 0,expired_tests INTEGER NOT NULL DEFAULT 0,portrait_fallbacks INTEGER NOT NULL DEFAULT 0,created INTEGER NOT NULL,last_activity INTEGER NOT NULL DEFAULT 0,UNIQUE(subject,owner,channel));
-   CREATE UNIQUE INDEX IF NOT EXISTS tk_room_owner ON tk_bindings(room_id) WHERE room_id IS NOT NULL;
-   CREATE INDEX IF NOT EXISTS tk_binding_subject ON tk_bindings(subject);
+   ${roomTable('IF NOT EXISTS tk_rooms')};
+   ${bindingTable('IF NOT EXISTS tk_bindings')};
+   CREATE TABLE IF NOT EXISTS tk_games(id TEXT PRIMARY KEY,place_ids TEXT NOT NULL,universe_id TEXT,commands TEXT NOT NULL,credential_hash TEXT);
    CREATE TABLE IF NOT EXISTS tk_events(binding TEXT NOT NULL REFERENCES tk_bindings(id),seq INTEGER NOT NULL,id TEXT NOT NULL,priority INTEGER NOT NULL,payload TEXT NOT NULL,received INTEGER NOT NULL,test_expires INTEGER,portrait_id TEXT,PRIMARY KEY(binding,seq),UNIQUE(binding,id));
    CREATE INDEX IF NOT EXISTS tk_event_priority ON tk_events(binding,priority,seq);
    CREATE TABLE IF NOT EXISTS tk_receipts(binding TEXT NOT NULL REFERENCES tk_bindings(id),id TEXT NOT NULL,fingerprint TEXT NOT NULL,PRIMARY KEY(binding,id));
@@ -72,10 +86,32 @@ export class TikkiesBridge{
   if(!this.db.prepare('PRAGMA table_info(tk_events)').all().some(column=>column.name==='portrait_id')){
    this.db.exec("ALTER TABLE tk_events ADD COLUMN portrait_id TEXT;UPDATE tk_events SET portrait_id=json_extract(payload,'$.sender.portraitId');");
   }
-  this.db.exec('CREATE INDEX IF NOT EXISTS tk_event_portrait ON tk_events(binding,portrait_id)');
+  this.migrateProductScope();
+  this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS tk_room_owner ON tk_bindings(game_id,room_id) WHERE room_id IS NOT NULL;CREATE INDEX IF NOT EXISTS tk_binding_subject ON tk_bindings(subject);CREATE INDEX IF NOT EXISTS tk_event_portrait ON tk_events(binding,portrait_id)');
+  this.db.prepare('INSERT OR IGNORE INTO tk_games(id,place_ids,universe_id,commands,credential_hash) VALUES(?,?,?,?,NULL)').run(magnetGameId,JSON.stringify(['113965026399564']),'10775380860',JSON.stringify(tikkiesEffects));
   this.statements=new Map();
   this.timer=setInterval(()=>{if(!this.closed){try{this.reconcile();this.pumpPortraits();}catch{/* A storage fault is retried without acknowledging new work. */}}},250);this.timer.unref();
   queueMicrotask(()=>this.pumpPortraits());
+ }
+ migrateProductScope(){
+  const bindings=!this.db.prepare('PRAGMA table_info(tk_bindings)').all().some(c=>c.name==='game_id');
+  const rooms=!this.db.prepare('PRAGMA table_info(tk_rooms)').all().some(c=>c.name==='game_id');
+  if(!bindings&&!rooms)return;
+  // SQLite cannot remove the old UNIQUE constraint in place. Rebuild only these
+  // parent tables, retaining every ID/sequence and all child queue/history rows.
+  this.db.exec('PRAGMA foreign_keys=OFF;BEGIN IMMEDIATE');
+  try{
+   if(bindings){
+    this.db.exec(`${bindingTable('tk_bindings_scoped')};
+     INSERT INTO tk_bindings_scoped(id,subject,owner,channel,expires,enabled,room_id,generation,seq,expired_tests,portrait_fallbacks,created,last_activity)
+      SELECT id,subject,owner,channel,expires,enabled,room_id,generation,seq,expired_tests,portrait_fallbacks,created,last_activity FROM tk_bindings;
+     DROP TABLE tk_bindings;ALTER TABLE tk_bindings_scoped RENAME TO tk_bindings;`);
+   }
+   if(rooms)this.db.exec(`${roomTable('tk_rooms_scoped')};INSERT INTO tk_rooms_scoped(id,players,native_busy,online,last_seen) SELECT id,players,native_busy,online,last_seen FROM tk_rooms;DROP TABLE tk_rooms;ALTER TABLE tk_rooms_scoped RENAME TO tk_rooms;`);
+   if(this.db.prepare('PRAGMA foreign_key_check').all().length)throw Error('QUEUE_MIGRATION_INTEGRITY');
+   this.db.exec('COMMIT');
+  }catch(error){this.db.exec('ROLLBACK');throw error;}
+  finally{this.db.exec('PRAGMA foreign_keys=ON');}
  }
  sql(text){if(!this.statements.has(text))this.statements.set(text,this.db.prepare(text));return this.statements.get(text);}
  transaction(fn){
@@ -88,7 +124,7 @@ export class TikkiesBridge{
  lease(value){const expiry=typeof value==='string'?Date.parse(value):value;if(!Number.isSafeInteger(expiry)||expiry<=this.now()||expiry>this.now()+45000)fail('INVALID_LEASE');return expiry;}
  scoped(input){
   if(typeof input.subject!=='string'||!/^[a-zA-Z0-9:_-]{16,160}$/.test(input.subject)||typeof input.bindingId!=='string')fail('INVALID_SCOPE');
-  const binding=this.sql('SELECT * FROM tk_bindings WHERE id=? AND subject=?').get(input.bindingId,input.subject);
+  const binding=this.sql('SELECT * FROM tk_bindings WHERE id=? AND subject=? AND game_id=?').get(input.bindingId,input.subject,gameId(input.gameId));
   if(!binding)fail('BINDING_NOT_FOUND',404);return binding;
  }
  active(binding){return binding.enabled===1&&binding.expires>this.now();}
@@ -131,21 +167,21 @@ export class TikkiesBridge{
   this.transaction(()=>{
    this.cleanupTests();
    const now=this.now(),rooms=this.sql('SELECT * FROM tk_rooms WHERE online=1 AND last_seen>=? ORDER BY last_seen DESC,id').all(now-this.roomTimeoutMs);
-   const available=new Map(rooms.map(r=>[r.id,{...r,players:JSON.parse(r.players)}]));
+   const available=new Map(rooms.map(r=>[roomKey(r.game_id,r.id),{...r,players:JSON.parse(r.players)}]));
    const bindings=this.sql('SELECT * FROM tk_bindings ORDER BY created,id').all();
    const occupied=new Set();
    for(const b of bindings){
-    const room=available.get(b.room_id);
+    const room=available.get(roomKey(b.game_id,b.room_id));
     if(b.room_id&&(!this.active(b)||!room||room.native_busy||!room.players.includes(b.owner))){
      this.sql('UPDATE tk_bindings SET room_id=NULL,generation=generation+1 WHERE id=?').run(b.id);b.room_id=null;b.generation++;changed=true;
     }
-    if(b.room_id)occupied.add(b.room_id);
+    if(b.room_id)occupied.add(roomKey(b.game_id,b.room_id));
    }
    for(const b of bindings){
     if(b.room_id||!this.active(b))continue;
-    const room=rooms.find(r=>!r.native_busy&&!occupied.has(r.id)&&available.get(r.id).players.includes(b.owner));
+    const room=rooms.find(r=>r.game_id===b.game_id&&!r.native_busy&&!occupied.has(roomKey(r.game_id,r.id))&&available.get(roomKey(r.game_id,r.id)).players.includes(b.owner));
     if(!room)continue;
-    b.generation++;this.sql('UPDATE tk_bindings SET room_id=?,generation=? WHERE id=?').run(room.id,b.generation,b.id);occupied.add(room.id);changed=true;
+    b.generation++;this.sql('UPDATE tk_bindings SET room_id=?,generation=? WHERE id=?').run(room.id,b.generation,b.id);occupied.add(roomKey(room.game_id,room.id));changed=true;
    }
    // Completed images are durable jobs too: queue once per room generation, with bounded retries.
    for(const p of this.sql('SELECT p.binding,p.id,p.pixels,b.generation FROM tk_portraits p JOIN tk_bindings b ON b.id=p.binding WHERE b.room_id IS NOT NULL AND p.pixels IS NOT NULL AND p.offered_generation<>b.generation LIMIT 128').all())this.enqueuePortrait(p.binding,p.id,p.pixels,p.generation);
@@ -160,7 +196,7 @@ export class TikkiesBridge{
  }
  state(binding){
   if(!this.active(binding))return 'paused';if(binding.room_id)return 'connected';
-  const rooms=this.sql('SELECT players FROM tk_rooms WHERE online=1 AND last_seen>=?').all(this.now()-this.roomTimeoutMs);
+  const rooms=this.sql('SELECT players FROM tk_rooms WHERE game_id=? AND online=1 AND last_seen>=?').all(binding.game_id,this.now()-this.roomTimeoutMs);
   return rooms.some(r=>JSON.parse(r.players).includes(binding.owner))?'busy':'waiting';
  }
  response(binding){return {ok:true,bindingId:binding.id,state:this.state(binding),...(binding.room_id?{roomId:binding.room_id}:{}),...this.diagnostics(binding.id),expiresAt:binding.expires,ownerRobloxId:binding.owner};}
@@ -178,17 +214,25 @@ export class TikkiesBridge{
   if(typeof input.subject!=='string'||!/^[a-zA-Z0-9:_-]{16,160}$/.test(input.subject)||!account(input.ownerRobloxId))fail('INVALID_SCOPE');
   let channel;try{channel=username(input.channel);}catch{fail('INVALID_CHANNEL');}
   const expires=this.lease(input.validUntil);
+  const id=gameId(input.gameId);
+  if(input.gameId===undefined&&input.game!==undefined)fail('INVALID_GAME');
+  const game=input.game===undefined?(id===magnetGameId?null:fail('INVALID_GAME')):normalizeGame(input.game,id);
   return this.transaction(()=>{
-   let binding=this.sql('SELECT * FROM tk_bindings WHERE subject=? AND owner=? AND channel=?').get(input.subject,input.ownerRobloxId,channel);
+   if(game){
+    const old=this.sql('SELECT * FROM tk_games WHERE id=?').get(id);
+    if(old&&(old.place_ids!==JSON.stringify(game.placeIds)||old.universe_id!==game.universeId))this.sql('UPDATE tk_rooms SET online=0 WHERE game_id=?').run(id);
+    this.sql('INSERT INTO tk_games(id,place_ids,universe_id,commands,credential_hash) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET place_ids=excluded.place_ids,universe_id=excluded.universe_id,commands=excluded.commands,credential_hash=excluded.credential_hash').run(id,JSON.stringify(game.placeIds),game.universeId,JSON.stringify(game.commands),game.credentialHash);
+   }
+   let binding=this.sql('SELECT * FROM tk_bindings WHERE game_id=? AND subject=? AND owner=? AND channel=?').get(id,input.subject,input.ownerRobloxId,channel);
    if(!binding&&Number(this.sql('SELECT COUNT(*) AS n FROM tk_bindings').get().n)>=this.maxBindings){
     this.recycleBindings();
     if(Number(this.sql('SELECT COUNT(*) AS n FROM tk_bindings').get().n)>=this.maxBindings)fail('BINDING_CAPACITY',429);
    }
    // Account/channel switches pause the previous selection without deleting its queue.
-   this.sql('UPDATE tk_bindings SET enabled=0,room_id=NULL,generation=generation+1,last_activity=? WHERE subject=? AND id<>? AND enabled=1').run(this.now(),input.subject,binding?.id??'');
+   this.sql('UPDATE tk_bindings SET enabled=0,room_id=NULL,generation=generation+1,last_activity=? WHERE game_id=? AND subject=? AND id<>? AND enabled=1').run(this.now(),id,input.subject,binding?.id??'');
    if(binding)this.sql('UPDATE tk_bindings SET expires=?,enabled=1,last_activity=? WHERE id=?').run(expires,this.now(),binding.id);
    else{
-    const id=randomUUID();this.sql('INSERT INTO tk_bindings(id,subject,owner,channel,expires,enabled,created,last_activity) VALUES(?,?,?,?,?,1,?,?)').run(id,input.subject,input.ownerRobloxId,channel,expires,this.now(),this.now());binding={id};
+    const bindingId=randomUUID();this.sql('INSERT INTO tk_bindings(id,game_id,subject,owner,channel,expires,enabled,created,last_activity) VALUES(?,?,?,?,?,?,1,?,?)').run(bindingId,id,input.subject,input.ownerRobloxId,channel,expires,this.now(),this.now());binding={id:bindingId};
    }
    this.reconcile();return this.response(this.sql('SELECT * FROM tk_bindings WHERE id=?').get(binding.id));
   });
@@ -207,11 +251,18 @@ export class TikkiesBridge{
    if(action!=='events')return this.response(binding);
    if(!this.active(binding))fail('LEASE_EXPIRED',403);
    if(!Array.isArray(input.events)||input.events.length<1||input.events.length>100)fail('INVALID_BATCH');
+   const commands=new Set(JSON.parse(this.sql('SELECT commands FROM tk_games WHERE id=?').get(binding.game_id).commands));
    const normalized=input.events.map(e=>normalizeEvent(e,binding.id));
+   const replayOnlyIds=input.replayOnlyIds===undefined?[]:input.replayOnlyIds;
+   if(!Array.isArray(replayOnlyIds)||replayOnlyIds.length>100||new Set(replayOnlyIds).size!==replayOnlyIds.length||replayOnlyIds.some(id=>typeof id!=='string'||!normalized.some(item=>item.event.id===id)))fail('INVALID_BATCH');
+   const replayOnly=new Set(replayOnlyIds);
    const batch=new Map(),duplicates=[];
    for(const item of normalized){
     const id=item.event.id,previous=batch.get(id),old=this.sql('SELECT fingerprint FROM tk_receipts WHERE binding=? AND id=?').get(binding.id,id);
     if((old&&old.fingerprint!==item.fingerprint)||(previous&&previous.fingerprint!==item.fingerprint))fail('RECEIPT_CONFLICT',409);
+    // An exact stored retry cannot enqueue work again, even if its command was
+    // removed after admission. Every new receipt requires current membership.
+    if(!old&&(replayOnly.has(id)||!commands.has(item.event.effect)))fail('INVALID_EFFECT');
     if(old||previous)duplicates.push(id);else batch.set(id,item);
    }
    const pending=this.diagnostics(binding.id).pending,total=Number(this.sql('SELECT COUNT(*) AS n FROM tk_events').get().n),receipts=Number(this.sql('SELECT COUNT(*) AS n FROM tk_receipts WHERE binding=?').get(binding.id).n);
@@ -257,24 +308,25 @@ export class TikkiesBridge{
     }
     this.sql('INSERT INTO tk_receipts(binding,id,fingerprint) VALUES(?,?,?)').run(binding.id,item.event.id,item.fingerprint);this.enqueue(binding.id,item.event,expiry);
    }
-   this.wake(binding.room_id);queueMicrotask(()=>this.pumpPortraits());
+   this.wake(roomKey(binding.game_id,binding.room_id));queueMicrotask(()=>this.pumpPortraits());
    return {...this.response(binding),accepted:normalized.map(item=>item.event.id),duplicates,enqueued:batch.size};
   });
  }
- register(token,input){
-  if(String(input.placeId)!=='113965026399564'||String(input.universeId)!=='10775380860'||typeof input.nativeBusy!=='boolean'||!Array.isArray(input.players)||input.players.length>100||input.players.some(id=>!account(id))||new Set(input.players).size!==input.players.length)fail('INVALID_ROOM');
+ register(token,input,id=magnetGameId){
+  const game=this.sql('SELECT * FROM tk_games WHERE id=?').get(id);
+  if(!game||!JSON.parse(game.place_ids).includes(String(input.placeId))||game.universe_id!==null&&String(input.universeId)!==game.universe_id||typeof input.nativeBusy!=='boolean'||!Array.isArray(input.players)||input.players.length>100||input.players.some(id=>!account(id))||new Set(input.players).size!==input.players.length)fail('INVALID_ROOM');
   return this.transaction(()=>{
    this.reconcile();
-   if(!this.sql('SELECT 1 FROM tk_rooms WHERE id=?').get(token)&&Number(this.sql('SELECT COUNT(*) AS n FROM tk_rooms').get().n)>=this.maxRooms){
-    this.sql('DELETE FROM tk_rooms WHERE (online=0 OR last_seen<?) AND NOT EXISTS(SELECT 1 FROM tk_bindings WHERE room_id=tk_rooms.id)').run(this.now()-this.roomTimeoutMs);
+   if(!this.sql('SELECT 1 FROM tk_rooms WHERE id=? AND game_id=?').get(token,id)&&Number(this.sql('SELECT COUNT(*) AS n FROM tk_rooms').get().n)>=this.maxRooms){
+    this.sql('DELETE FROM tk_rooms WHERE (online=0 OR last_seen<?) AND NOT EXISTS(SELECT 1 FROM tk_bindings WHERE room_id=tk_rooms.id AND game_id=tk_rooms.game_id)').run(this.now()-this.roomTimeoutMs);
     if(Number(this.sql('SELECT COUNT(*) AS n FROM tk_rooms').get().n)>=this.maxRooms)fail('ROOM_CAPACITY',429);
    }
-   this.sql('INSERT INTO tk_rooms(id,players,native_busy,online,last_seen) VALUES(?,?,?,1,?) ON CONFLICT(id) DO UPDATE SET players=excluded.players,native_busy=excluded.native_busy,online=1,last_seen=excluded.last_seen').run(token,JSON.stringify(input.players),input.nativeBusy?1:0,this.now());
-   this.reconcile();return this.roomResponse(token,0);
+   this.sql('INSERT INTO tk_rooms(id,game_id,players,native_busy,online,last_seen) VALUES(?,?,?,?,1,?) ON CONFLICT(game_id,id) DO UPDATE SET players=excluded.players,native_busy=excluded.native_busy,online=1,last_seen=excluded.last_seen').run(token,id,JSON.stringify(input.players),input.nativeBusy?1:0,this.now());
+   this.reconcile();return this.roomResponse(token,0,id);
   });
  }
- roomResponse(token,limit=100){
-  const b=this.sql('SELECT * FROM tk_bindings WHERE room_id=?').get(token);
+ roomResponse(token,limit=100,id=magnetGameId){
+  const b=this.sql('SELECT * FROM tk_bindings WHERE room_id=? AND game_id=?').get(token,id);
   if(!b)return {ok:true,state:'waiting',status:'WAITING',binding:null,events:[],pending:0,portraitPending:0,expiredTests:0,oldestAgeMs:0,hasMore:false,dropped:0};
   let offer=this.offers.get(b.id);if(!offer||offer.generation!==b.generation){offer={generation:b.generation,cursors:[0,0,0,0]};this.offers.set(b.id,offer);}
   const rows=[];
@@ -287,25 +339,25 @@ export class TikkiesBridge{
   const stats=this.diagnostics(b.id);
   return {ok:true,state:'connected',status:'CONNECTED',binding:{id:b.id,ownerRobloxId:b.owner,channel:b.channel,expiresAt:b.expires,generation:b.generation},events:rows.map(r=>JSON.parse(r.payload)),...stats,hasMore:stats.pending>rows.length,dropped:0};
  }
- async poll(token,url,headers){
+ async poll(token,url,headers,id=magnetGameId){
   const limit=Number(url.searchParams.get('limit')??100),waitMs=Number(url.searchParams.get('waitMs')??0);
   if(!Number.isSafeInteger(limit)||limit<1||limit>100||!Number.isFinite(waitMs)||waitMs<0||waitMs>1000)fail('INVALID_POLL');
   let acks;try{acks=JSON.parse(String(headers['x-magnet-ack']??'[]'));}catch{fail('INVALID_ACK');}
   if(!Array.isArray(acks)||acks.length>100||acks.some(n=>!Number.isSafeInteger(n)||n<1))fail('INVALID_ACK');
   let result=this.transaction(()=>{
-   const room=this.sql('SELECT * FROM tk_rooms WHERE id=?').get(token);if(!room||room.online!==1)fail('ROOM_NOT_REGISTERED',409);
-   this.sql('UPDATE tk_rooms SET last_seen=? WHERE id=?').run(this.now(),token);this.reconcile();
-   this.sql('UPDATE tk_bindings SET last_activity=? WHERE room_id=?').run(this.now(),token);
+   const room=this.sql('SELECT * FROM tk_rooms WHERE id=? AND game_id=?').get(token,id);if(!room||room.online!==1)fail('ROOM_NOT_REGISTERED',409);
+   this.sql('UPDATE tk_rooms SET last_seen=? WHERE id=? AND game_id=?').run(this.now(),token,id);this.reconcile();
+   this.sql('UPDATE tk_bindings SET last_activity=? WHERE room_id=? AND game_id=?').run(this.now(),token,id);
    if(acks.length){
-    const b=this.sql('SELECT * FROM tk_bindings WHERE room_id=?').get(token);
-    const id=headers['x-tikkies-binding']??headers['x-magnet-binding'],generation=Number(headers['x-tikkies-generation']??headers['x-magnet-generation']);
-    if(!b||id!==b.id||!Number.isSafeInteger(generation)||generation!==b.generation)fail('STALE_BINDING',409);
+    const b=this.sql('SELECT * FROM tk_bindings WHERE room_id=? AND game_id=?').get(token,id);
+    const ackBinding=headers['x-tikkies-binding']??headers['x-magnet-binding'],generation=Number(headers['x-tikkies-generation']??headers['x-magnet-generation']);
+    if(!b||ackBinding!==b.id||!Number.isSafeInteger(generation)||generation!==b.generation)fail('STALE_BINDING',409);
     if(acks.some(n=>n>b.seq))fail('INVALID_ACK');
     for(const seq of acks)this.sql('DELETE FROM tk_events WHERE binding=? AND seq=?').run(b.id,seq);
    }
-   return this.roomResponse(token,limit);
+   return this.roomResponse(token,limit,id);
   });
-  if(!result.events.length&&waitMs>0){await this.wait(token,waitMs);if(this.closed)return {ok:true,state:'paused',binding:null,events:[],pending:0};this.reconcile();result=this.roomResponse(token,limit);}
+  if(!result.events.length&&waitMs>0){await this.wait(roomKey(id,token),waitMs);if(this.closed)return {ok:true,state:'paused',binding:null,events:[],pending:0};this.reconcile();result=this.roomResponse(token,limit,id);}
   return result;
  }
  pumpPortraits(){
@@ -322,7 +374,7 @@ export class TikkiesBridge{
       const b=this.sql('SELECT * FROM tk_bindings WHERE id=?').get(job.binding);if(!b)return;
       const encoded=JSON.stringify(pixels);this.sql('UPDATE tk_portraits SET pixels=? WHERE binding=? AND id=?').run(encoded,job.binding,job.id);
       this.sql('UPDATE tk_bindings SET last_activity=? WHERE id=?').run(this.now(),job.binding);
-      this.enqueuePortrait(job.binding,job.id,encoded,b.generation);this.wake(b.room_id);
+      this.enqueuePortrait(job.binding,job.id,encoded,b.generation);this.wake(roomKey(b.game_id,b.room_id));
      });
     }).catch(()=>{
      if(!this.closed){try{this.sql('UPDATE tk_portraits SET attempts=attempts+1,next_attempt=? WHERE binding=? AND id=?').run(this.now()+Math.min(300000,1000*2**Math.min(8,job.attempts)),job.binding,job.id);}catch{/* Leave the persisted job for recovery. */}}
@@ -333,11 +385,14 @@ export class TikkiesBridge{
  async handle(req,url,reply){
   try{
    const service=url.pathname.startsWith('/tikkies/service/');
+   let id;
    if(service){
     if(!sameKey(req.headers['x-tikkies-key'],this.key))fail('UNAUTHORIZED',401);
     if(req.method!=='POST')fail('NOT_FOUND',404);
    }else{
-    if(!sameKey(req.headers['x-magnet-key'],this.mapKey))fail('UNAUTHORIZED',401);
+    id=gameId(req.headers['x-tikkies-game']);
+    const game=this.sql('SELECT credential_hash FROM tk_games WHERE id=?').get(id),token=req.headers['x-magnet-key'];
+    if(!(id===magnetGameId&&sameKey(token,this.mapKey))&&!(game?.credential_hash&&typeof token==='string'&&sameKey(createHash('sha256').update(token).digest('hex'),game.credential_hash)))fail('UNAUTHORIZED',401);
     if(!sessionId(req.headers['x-magnet-session']))fail('INVALID_SESSION');
    }
    let input={};
@@ -348,9 +403,9 @@ export class TikkiesBridge{
    }
    let result;
    if(service)result=this.service(url.pathname.slice('/tikkies/service/'.length),input);
-   else if(url.pathname==='/tikkies/room'&&req.method==='POST')result=this.register(req.headers['x-magnet-session'],input);
+   else if(url.pathname==='/tikkies/room'&&req.method==='POST')result=this.register(req.headers['x-magnet-session'],input,id);
    else if(url.pathname==='/tikkies/room/leave'&&req.method==='POST'){
-    this.sql('UPDATE tk_rooms SET online=0 WHERE id=?').run(req.headers['x-magnet-session']);this.reconcile();result={ok:true,state:'paused'};
+    this.sql('UPDATE tk_rooms SET online=0 WHERE id=? AND game_id=?').run(req.headers['x-magnet-session'],id);this.reconcile();result={ok:true,state:'paused'};
    }else if(url.pathname==='/tikkies/events'&&req.method==='POST'){
     // Roblox rejects '[' in custom header values. ACK arrays belong in JSON.
     if(Object.keys(input).some(k=>!['acks','binding','generation','waitMs','limit'].includes(k))||
@@ -362,8 +417,8 @@ export class TikkiesBridge{
     result=await this.poll(req.headers['x-magnet-session'],pollUrl,{
      'x-magnet-ack':JSON.stringify(input.acks===undefined?[]:input.acks),
      'x-magnet-binding':input.binding,'x-magnet-generation':input.generation,
-    });
-   }else if(url.pathname==='/tikkies/events'&&req.method==='GET')result=await this.poll(req.headers['x-magnet-session'],url,req.headers);
+    },id);
+   }else if(url.pathname==='/tikkies/events'&&req.method==='GET')result=await this.poll(req.headers['x-magnet-session'],url,req.headers,id);
    else fail('NOT_FOUND',404);
    reply(200,result);
   }catch(error){reply(error.status??503,{ok:false,error:error.code??'QUEUE_STORAGE_ERROR'});}
