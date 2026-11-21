@@ -251,7 +251,11 @@ export class TikkiesBridge{
    if(action!=='events')return this.response(binding);
    if(!this.active(binding))fail('LEASE_EXPIRED',403);
    if(!Array.isArray(input.events)||input.events.length<1||input.events.length>100)fail('INVALID_BATCH');
-   const commands=new Set(JSON.parse(this.sql('SELECT commands FROM tk_games WHERE id=?').get(binding.game_id).commands));
+   // The auth backend may provide its current published proof for this intake.
+   // Keep it request-scoped: another user's cached proof must not roll back the
+   // shared registry or authorize a later request from a different binding.
+   if(input.commands!==undefined&&(!Array.isArray(input.commands)||input.commands.length>200||input.commands.some(value=>!commandId(value))||new Set(input.commands).size!==input.commands.length))fail('INVALID_COMMANDS');
+   const commands=new Set(input.commands??JSON.parse(this.sql('SELECT commands FROM tk_games WHERE id=?').get(binding.game_id).commands));
    const normalized=input.events.map(e=>normalizeEvent(e,binding.id));
    const replayOnlyIds=input.replayOnlyIds===undefined?[]:input.replayOnlyIds;
    if(!Array.isArray(replayOnlyIds)||replayOnlyIds.length>100||new Set(replayOnlyIds).size!==replayOnlyIds.length||replayOnlyIds.some(id=>typeof id!=='string'||!normalized.some(item=>item.event.id===id)))fail('INVALID_BATCH');

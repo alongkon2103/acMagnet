@@ -116,6 +116,23 @@ test('trusted replay-only IDs confirm only exact durable receipts even when rela
  assert.equal((await f.service('status',{gameId:productA,subject,bindingId:b.bindingId})).pending,2);
 });
 
+test('trusted current command proof authorizes only its events request without mutating the registry',async t=>{
+ const f=await fixture(t);const b=await f.bind({gameId:productA,game:{...gameA,commands:['Old']}});
+ const fresh=effect('new-proof',{effect:'New',quantity:17});
+ const accepted=await f.send(b.bindingId,[fresh],{gameId:productA,commands:['New']});assert.equal(accepted.enqueued,1,'Current published proof applies before another bind');
+ assert.equal((await f.send(b.bindingId,[{...fresh,id:'stale-proof'}],{gameId:productA,commands:['Old']})).status,400);
+ assert.equal((await f.send(b.bindingId,[{...fresh,id:'legacy-proof'}],{gameId:productA})).status,400,'Per-request proof cannot mutate the persisted registry');
+ assert.equal((await f.send(b.bindingId,[effect('legacy-old',{effect:'Old'})],{gameId:productA})).enqueued,1,'Missing proof retains registered legacy membership');
+ assert.equal((await f.send(b.bindingId,[fresh],{gameId:productA,commands:[],replayOnlyIds:[fresh.id]})).enqueued,0,'An exact accepted retry survives later removal');
+ assert.equal((await f.send(b.bindingId,[{...fresh,id:'new-replay-only'}],{gameId:productA,commands:['New'],replayOnlyIds:['new-replay-only']})).status,400);
+ assert.equal((await f.send(b.bindingId,[{...fresh,id:'empty-proof'}],{gameId:productA,commands:[]})).status,400);
+ for(const commands of [null,{},'New',['New','New'],['bad command'],['_invalid'],['a'.repeat(81)],Array.from({length:201},(_,i)=>'Command'+i)])assert.equal((await f.send(b.bindingId,[fresh],{gameId:productA,commands})).status,400);
+ assert.equal((await f.send(b.bindingId,[effect('bounded',{effect:'Command199'})],{gameId:productA,commands:Array.from({length:200},(_,i)=>'Command'+i)})).enqueued,1);
+ await f.map('/tikkies/room',{placeId:gameA.placeIds[0],universeId:gameA.universeId,players:[owner],nativeBusy:false},roomId,productHeaders(productA,credentialA));
+ assert.equal((await f.map('/tikkies/events',{acks:[],commands:['New']},roomId,productHeaders(productA,credentialA))).status,400,'Map polls cannot supply a command proof');
+ const page=await f.map('/tikkies/events',{acks:[]},roomId,productHeaders(productA,credentialA));assert.equal(page.pending,3);assert.equal(page.events.find(e=>e.id==='new-proof').quantity,17);
+});
+
 test('product registry and queues replay after restart with backpressure, profiles and fenced JSON ACKs',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'magnet-tikkies-products-'));const databasePath=join(dir,'queue.sqlite');let restarted;
  const f=await fixture(t,{tikkiesDatabasePath:databasePath,tikkiesOptions:{maxPending:2},pixels:async()=>Array(1024).fill(0x112233)});
